@@ -5,6 +5,8 @@ import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { FirebaseClientProvider } from '@/firebase';
 import PwaInstaller from '@/components/pwa-installer';
+import { ThemeProvider } from "@/components/theme-provider";
+import { ClientOnly } from "@/components/utilities/ClientOnly";
 
 export const metadata: Metadata = {
   title: 'E-SPENLI',
@@ -32,11 +34,20 @@ export default function RootLayout({
   return (
     <html lang="id" suppressHydrationWarning>
       <body>
-        <FirebaseClientProvider>
-          {children}
-        </FirebaseClientProvider>
-        <PwaInstaller />
-        <Toaster />
+        <ClientOnly>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="light"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <FirebaseClientProvider>
+              {children}
+            </FirebaseClientProvider>
+            <PwaInstaller />
+            <Toaster />
+          </ThemeProvider>
+        </ClientOnly>
       </body>
     </html>
   );

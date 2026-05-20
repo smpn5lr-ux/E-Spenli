@@ -27,6 +27,7 @@ import { LogOut, Settings, ShieldAlert } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { ModeToggle } from '@/components/theme-toggle';
 import NetworkStatus from '@/components/utilities/NetworkStatus'; // Import NetworkStatus
+import { ClientOnly } from '@/components/utilities/ClientOnly'; // Impor ClientOnly
 
 export function Header({ isTransparent }: { isTransparent?: boolean }) {
   const firestore = useFirestore();
@@ -112,7 +113,9 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
                 </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
-        <ModeToggle />
+        <ClientOnly>
+          <ModeToggle />
+        </ClientOnly>
         {/* ADDED NETWORK STATUS INDICATOR */}
         <NetworkStatus />
       </div>

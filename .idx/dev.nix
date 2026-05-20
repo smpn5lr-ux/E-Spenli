@@ -22,7 +22,7 @@
     workspace = {
       onCreate = {
         default.openFiles = [ "src/app/page.tsx" ];
-        npm-install = "cd e-spenli && npm install";
+        npm-install = "npm install";
       };
       onStart = {
         # watch-backend = "npm run watch-backend";
@@ -33,7 +33,7 @@
       enable = true;
       previews = {
         web = {
-          command = [ "sh" "-c" "cd e-spenli && npm run dev" ];
+          command = [ "sh" "-c" "npm run dev" ];
           manager = "web";
           env = {
             PORT = "$PORT";
