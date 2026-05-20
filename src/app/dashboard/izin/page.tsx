@@ -32,12 +32,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { PageWrapper } from '@/components/layout/page-wrapper';
 
-// 1. Updated Zod schema with new leave types
 const leaveRequestSchema = z.object({
   leaveDate: z.enum(['today', 'tomorrow'], {
     required_error: 'Tanggal pengajuan wajib dipilih.',
   }),
-  type: z.enum(['Izin Pulang Cepat', 'Sakit', 'Izin (pribadi)', 'Dinas Pagi', 'Dinas Siang'], {
+  type: z.enum(['Izin Pulang Cepat', 'Sakit', 'Izin (pribadi)', 'Dinas Pagi', 'Dinas Siang', 'Dinas Full (1 Hari)'], {
     required_error: 'Jenis pengajuan wajib dipilih.',
   }),
   reason: z.string().min(10, { message: 'Alasan harus diisi minimal 10 karakter.' }),
@@ -69,13 +68,53 @@ export default function IzinPage() {
     const schoolConfigRef = useMemoFirebase(() => user ? doc(firestore, 'schoolConfig', 'default') : null, [firestore, user]);
     const { data: schoolConfig, isLoading: isSchoolConfigLoading } = useDoc(user, schoolConfigRef);
 
+    // 1. Fetch holidays from Firestore
+    const holidaysCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'holidays') : null, [firestore]);
+    const { data: holidaysData, isLoading: isHolidaysLoading } = useCollection(user, holidaysCollectionRef);
+
+    const holidays = useMemo(() => {
+        if (!holidaysData) return [];
+        // Assumes holiday documents have an ID in 'YYYY-MM-DD' format
+        return holidaysData.map(h => h.id);
+    }, [holidaysData]);
+
+    // 2. Create a utility to check for holidays and weekends
+    const dateOptions = useMemo(() => {
+        const now = new Date();
+        
+        const isHoliday = (date: Date) => {
+            // Check for weekends (Saturday=6, Sunday=0)
+            const day = date.getDay();
+            if (day === 0 || day === 6) return true;
+
+            // Check against the list of national holidays from Firestore
+            const dateString = format(date, 'yyyy-MM-dd');
+            return holidays.includes(dateString);
+        };
+
+        const todayDate = now;
+        const tomorrowDate = addDays(now, 1);
+
+        return {
+            today: {
+                date: todayDate,
+                formatted: format(todayDate, 'eeee, d MMMM yyyy', { locale: id }),
+                isHoliday: isHoliday(todayDate),
+            },
+            tomorrow: {
+                date: tomorrowDate,
+                formatted: format(tomorrowDate, 'eeee, d MMMM yyyy', { locale: id }),
+                isHoliday: isHoliday(tomorrowDate),
+            },
+        };
+    }, [holidays]);
+
     const selectedDateValue = form.watch('leaveDate');
     const selectedLeaveType = form.watch('type');
 
     const targetDate = useMemo(() => {
-        const now = new Date();
-        return selectedDateValue === 'tomorrow' ? addDays(now, 1) : now;
-    }, [selectedDateValue]);
+      return selectedDateValue === 'tomorrow' ? dateOptions.tomorrow.date : dateOptions.today.date;
+    }, [selectedDateValue, dateOptions]);
 
     const targetDateStart = useMemo(() => startOfDay(targetDate), [targetDate]);
     const targetDateEnd = useMemo(() => endOfDay(targetDate), [targetDate]);
@@ -110,38 +149,26 @@ export default function IzinPage() {
         return currentTime > checkOutStart;
     }, [currentTime, schoolConfig]);
     
-    // 2. Updated availableLeaveTypes with new values and labels
     const availableLeaveTypes = useMemo(() => {
         const isToday = selectedDateValue === 'today';
         const fullDayLeaveDisabled = hasCheckedIn || (isToday && isPastCheckoutTime);
+        const partialLeaveDisabled = !isToday || !hasCheckedIn || hasCheckedOut;
+
         return [
-            {
-                value: 'Izin Pulang Cepat',
-                label: 'Izin Pulang Cepat',
-                disabled: !isToday || !hasCheckedIn || hasCheckedOut
-            },
-            {
-                value: 'Sakit',
-                label: 'Sakit',
-                disabled: fullDayLeaveDisabled
-            },
-            {
-                value: 'Izin (pribadi)',
-                label: 'Izin (pribadi)',
-                disabled: fullDayLeaveDisabled
-            },
-            {
-                value: 'Dinas Pagi',
-                label: 'Dinas Pagi',
-                disabled: fullDayLeaveDisabled
-            },
-            {
-                value: 'Dinas Siang',
-                label: 'Dinas Siang',
-                disabled: fullDayLeaveDisabled
-            },
+            { value: 'Sakit', label: 'Sakit', disabled: fullDayLeaveDisabled },
+            { value: 'Izin (pribadi)', label: 'Izin (pribadi)', disabled: fullDayLeaveDisabled },
+            { value: 'Dinas Full (1 Hari)', label: 'Dinas Full (1 Hari)', disabled: fullDayLeaveDisabled },
+            { value: 'Dinas Pagi', label: 'Dinas Pagi', disabled: fullDayLeaveDisabled },
+            { value: 'Izin Pulang Cepat', label: 'Izin Pulang Cepat', disabled: partialLeaveDisabled },
+            { value: 'Dinas Siang', label: 'Dinas Siang', disabled: partialLeaveDisabled },
         ];
     }, [selectedDateValue, hasCheckedIn, hasCheckedOut, isPastCheckoutTime]);
+
+    useEffect(() => {
+        if (dateOptions.today.isHoliday && form.getValues('leaveDate') === 'today') {
+            form.resetField('leaveDate');
+        }
+    }, [dateOptions, form]);
 
     useEffect(() => {
         const selectedType = form.getValues('type');
@@ -156,24 +183,25 @@ export default function IzinPage() {
     async function onSubmit(values: z.infer<typeof leaveRequestSchema>) {
         if (!user || !firestore) return;
         
-        // 3. Updated logic to handle 'Izin Pulang Cepat'
-        if (values.type === 'Izin Pulang Cepat') {
+        const partialLeaveTypes = ['Izin Pulang Cepat', 'Dinas Siang'];
+
+        if (partialLeaveTypes.includes(values.type)) {
             if (!hasCheckedIn) {
-                toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: 'Anda harus absen masuk terlebih dahulu untuk mengajukan izin pulang cepat.' });
+                toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: 'Anda harus absen masuk terlebih dahulu untuk mengajukan izin ini.' });
                 return;
             }
             if (hasCheckedOut) {
-                toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: 'Anda sudah absen pulang. Tidak dapat mengajukan izin pulang cepat.' });
+                toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: 'Anda sudah absen pulang, tidak dapat mengajukan izin ini.' });
                 return;
             }
-        } else { // For all other full-day leave types
+        } else {
             if (hasCheckedIn) {
-                toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: `Anda sudah melakukan absensi hari ini. Tidak dapat mengajukan izin penuh waktu (sakit, dinas, dll).` });
+                toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: `Anda sudah melakukan absensi hari ini, tidak dapat mengajukan izin satu hari penuh.` });
                 return;
             }
         }
 
-        if (values.leaveDate === 'today' && isPastCheckoutTime && values.type !== 'Izin Pulang Cepat') {
+        if (values.leaveDate === 'today' && isPastCheckoutTime && !partialLeaveTypes.includes(values.type)) {
             toast({ variant: 'destructive', title: 'Waktu Pengajuan Habis', description: 'Anda tidak dapat mengajukan izin untuk hari ini setelah jam kerja berakhir.' });
             return;
         }
@@ -213,15 +241,12 @@ export default function IzinPage() {
             .finally(() => setIsSubmitting(false));
     }
 
-    const isChecking = isAttendanceLoading || isLeaveLoading || isSchoolConfigLoading;
+    const isChecking = isAttendanceLoading || isLeaveLoading || isSchoolConfigLoading || isHolidaysLoading;
     const isTodayAndPastCheckout = selectedDateValue === 'today' && isPastCheckoutTime;
-
-    const todayFormatted = format(new Date(), 'eeee, d MMMM yyyy', { locale: id });
-    const tomorrowFormatted = format(addDays(new Date(), 1), 'eeee, d MMMM yyyy', { locale: id });
 
     const getSubmitButtonText = () => {
       if (isChecking) return 'Memeriksa data...';
-      if (selectedLeaveType === 'Izin Pulang Cepat') return 'Ajukan Izin Pulang Cepat';
+      if (selectedLeaveType === 'Izin Pulang Cepat' || selectedLeaveType === 'Dinas Siang') return 'Ajukan Izin Meninggalkan Sekolah';
       return 'Kirim Pengajuan Ketidakhadiran';
     }
 
@@ -232,46 +257,72 @@ export default function IzinPage() {
                     <form onSubmit={form.handleSubmit(onSubmit)}>
                         <CardHeader>
                             <CardTitle>Formulir Pengajuan Izin</CardTitle>
-                            <CardDescription>Isi formulir untuk mengajukan ketidakhadiran atau izin pulang cepat. Pengajuan akan ditinjau oleh Kepala Sekolah.</CardDescription>
+                            <CardDescription>Isi formulir untuk mengajukan ketidakhadiran atau izin meninggalkan sekolah. Pengajuan akan ditinjau oleh Kepala Sekolah.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                             {isTodayAndPastCheckout && !hasCheckedIn && (
+                            { /* 3. Show alerts for holidays */ }
+                            {dateOptions.today.isHoliday && selectedDateValue === 'today' && (
+                                <Alert variant="warning">
+                                    <Info className="h-4 w-4" />
+                                    <AlertTitle>Hari Ini Adalah Hari Libur</AlertTitle>
+                                    <AlertDescription>
+                                        Anda tidak dapat mengajukan izin karena hari ini adalah akhir pekan atau hari libur nasional.
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+                            {isTodayAndPastCheckout && !hasCheckedIn && (
                                 <Alert variant="destructive">
                                     <Info className="h-4 w-4" />
                                     <AlertTitle>Waktu Pengajuan Izin Hari Ini Telah Berakhir</AlertTitle>
                                     <AlertDescription>
-                                        Anda tidak dapat lagi mengajukan Izin, Sakit, atau Dinas untuk hari ini karena telah melewati jam kerja. Silakan pilih "Besok".
+                                        Anda tidak dapat lagi mengajukan izin penuh waktu untuk hari ini karena telah melewati jam kerja. Silakan pilih "Besok".
                                     </AlertDescription>
                                 </Alert>
                             )}
                             
-                            {!hasCheckedIn && selectedDateValue === 'today' && (
+                            {selectedDateValue === 'today' && !dateOptions.today.isHoliday && (
                                 <Alert variant="default">
                                     <Info className="h-4 w-4" />
-                                    <AlertTitle>Info: Izin Pulang Cepat</AlertTitle>
+                                    <AlertTitle>Info Izin</AlertTitle>
                                     <AlertDescription>
-                                        Opsi "Izin Pulang Cepat" akan aktif setelah Anda melakukan absensi masuk hari ini.
+                                        {hasCheckedIn 
+                                        ? 'Anda sudah absen masuk. Anda bisa mengajukan izin parsial (Dinas Siang/Pulang Cepat).' 
+                                        : 'Opsi izin parsial (Dinas Siang/Pulang Cepat) akan aktif setelah Anda absen masuk.'} 
                                     </AlertDescription>
                                 </Alert>
                             )}
 
+                            {/* 4. Disable select options based on holiday status */}
                             <FormField
                                 control={form.control}
                                 name="leaveDate"
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Pilih Tanggal Pengajuan</FormLabel>
-                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                        <Select 
+                                            onValueChange={field.onChange} 
+                                            defaultValue={field.value} 
+                                            disabled={dateOptions.today.isHoliday && dateOptions.tomorrow.isHoliday}
+                                        >
                                             <FormControl>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Pilih tanggal pengajuan" />
                                                 </SelectTrigger>
                                             </FormControl>
                                             <SelectContent>
-                                                <SelectItem value="today">Hari Ini ({todayFormatted})</SelectItem>
-                                                <SelectItem value="tomorrow">Besok ({tomorrowFormatted})</SelectItem>
+                                                <SelectItem value="today" disabled={dateOptions.today.isHoliday}>
+                                                    Hari Ini ({dateOptions.today.formatted}) {dateOptions.today.isHoliday && "(Hari Libur)"}
+                                                </SelectItem>
+                                                <SelectItem value="tomorrow" disabled={dateOptions.tomorrow.isHoliday}>
+                                                    Besok ({dateOptions.tomorrow.formatted}) {dateOptions.tomorrow.isHoliday && "(Hari Libur)"}
+                                                </SelectItem>
                                             </SelectContent>
                                         </Select>
+                                         {(dateOptions.today.isHoliday && dateOptions.tomorrow.isHoliday) && (
+                                            <p className="text-sm text-destructive mt-2">
+                                                Tidak ada tanggal yang dapat dipilih karena hari ini dan besok adalah hari libur.
+                                            </p>
+                                        )}
                                         <FormMessage />
                                     </FormItem>
                                 )}
@@ -328,11 +379,11 @@ export default function IzinPage() {
                             />
                         </CardContent>
                         <CardFooter className="border-t pt-6">
-                            <Button type="submit" disabled={isSubmitting || isChecking}>
+                            <Button type="submit" disabled={isSubmitting || isChecking || (selectedDateValue === 'today' && dateOptions.today.isHoliday) || (selectedDateValue === 'tomorrow' && dateOptions.tomorrow.isHoliday)}>
                                {(isSubmitting || isChecking) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                {getSubmitButtonText()}
                             </Button>
-                        </CardFooter>
+                        </CardFooter
                     </form>
                 </Form>
             </Card>
