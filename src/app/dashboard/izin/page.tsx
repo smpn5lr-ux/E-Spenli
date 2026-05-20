@@ -32,11 +32,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { PageWrapper } from '@/components/layout/page-wrapper';
 
+// 1. Updated Zod schema with new leave types
 const leaveRequestSchema = z.object({
   leaveDate: z.enum(['today', 'tomorrow'], {
     required_error: 'Tanggal pengajuan wajib dipilih.',
   }),
-  type: z.enum(['Sakit', 'Izin', 'Perjalanan Dinas', 'Pulang Cepat'], {
+  type: z.enum(['Izin Pulang Cepat', 'Sakit', 'Izin (pribadi)', 'Dinas Pagi', 'Dinas Siang'], {
     required_error: 'Jenis pengajuan wajib dipilih.',
   }),
   reason: z.string().min(10, { message: 'Alasan harus diisi minimal 10 karakter.' }),
@@ -109,12 +110,13 @@ export default function IzinPage() {
         return currentTime > checkOutStart;
     }, [currentTime, schoolConfig]);
     
+    // 2. Updated availableLeaveTypes with new values and labels
     const availableLeaveTypes = useMemo(() => {
         const isToday = selectedDateValue === 'today';
         const fullDayLeaveDisabled = hasCheckedIn || (isToday && isPastCheckoutTime);
         return [
             {
-                value: 'Pulang Cepat',
+                value: 'Izin Pulang Cepat',
                 label: 'Izin Pulang Cepat',
                 disabled: !isToday || !hasCheckedIn || hasCheckedOut
             },
@@ -124,13 +126,18 @@ export default function IzinPage() {
                 disabled: fullDayLeaveDisabled
             },
             {
-                value: 'Izin',
-                label: 'Izin',
+                value: 'Izin (pribadi)',
+                label: 'Izin (pribadi)',
                 disabled: fullDayLeaveDisabled
             },
             {
-                value: 'Perjalanan Dinas',
-                label: 'Perjalanan Dinas',
+                value: 'Dinas Pagi',
+                label: 'Dinas Pagi',
+                disabled: fullDayLeaveDisabled
+            },
+            {
+                value: 'Dinas Siang',
+                label: 'Dinas Siang',
                 disabled: fullDayLeaveDisabled
             },
         ];
@@ -149,7 +156,8 @@ export default function IzinPage() {
     async function onSubmit(values: z.infer<typeof leaveRequestSchema>) {
         if (!user || !firestore) return;
         
-        if (values.type === 'Pulang Cepat') {
+        // 3. Updated logic to handle 'Izin Pulang Cepat'
+        if (values.type === 'Izin Pulang Cepat') {
             if (!hasCheckedIn) {
                 toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: 'Anda harus absen masuk terlebih dahulu untuk mengajukan izin pulang cepat.' });
                 return;
@@ -158,14 +166,14 @@ export default function IzinPage() {
                 toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: 'Anda sudah absen pulang. Tidak dapat mengajukan izin pulang cepat.' });
                 return;
             }
-        } else {
+        } else { // For all other full-day leave types
             if (hasCheckedIn) {
-                toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: `Anda sudah melakukan absensi hari ini. Tidak dapat mengajukan izin sakit/dinas.` });
+                toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: `Anda sudah melakukan absensi hari ini. Tidak dapat mengajukan izin penuh waktu (sakit, dinas, dll).` });
                 return;
             }
         }
 
-        if (values.leaveDate === 'today' && isPastCheckoutTime && values.type !== 'Pulang Cepat') {
+        if (values.leaveDate === 'today' && isPastCheckoutTime && values.type !== 'Izin Pulang Cepat') {
             toast({ variant: 'destructive', title: 'Waktu Pengajuan Habis', description: 'Anda tidak dapat mengajukan izin untuk hari ini setelah jam kerja berakhir.' });
             return;
         }
@@ -213,7 +221,7 @@ export default function IzinPage() {
 
     const getSubmitButtonText = () => {
       if (isChecking) return 'Memeriksa data...';
-      if (selectedLeaveType === 'Pulang Cepat') return 'Ajukan Izin Pulang Cepat';
+      if (selectedLeaveType === 'Izin Pulang Cepat') return 'Ajukan Izin Pulang Cepat';
       return 'Kirim Pengajuan Ketidakhadiran';
     }
 
@@ -232,7 +240,7 @@ export default function IzinPage() {
                                     <Info className="h-4 w-4" />
                                     <AlertTitle>Waktu Pengajuan Izin Hari Ini Telah Berakhir</AlertTitle>
                                     <AlertDescription>
-                                        Anda tidak dapat lagi mengajukan Izin, Sakit, atau Perjalanan Dinas untuk hari ini karena telah melewati jam kerja. Silakan pilih "Besok".
+                                        Anda tidak dapat lagi mengajukan Izin, Sakit, atau Dinas untuk hari ini karena telah melewati jam kerja. Silakan pilih "Besok".
                                     </AlertDescription>
                                 </Alert>
                             )}
