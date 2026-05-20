@@ -68,26 +68,21 @@ export default function IzinPage() {
     const schoolConfigRef = useMemoFirebase(() => user ? doc(firestore, 'schoolConfig', 'default') : null, [firestore, user]);
     const { data: schoolConfig, isLoading: isSchoolConfigLoading } = useDoc(user, schoolConfigRef);
 
-    // 1. Fetch holidays from Firestore
     const holidaysCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'holidays') : null, [firestore]);
     const { data: holidaysData, isLoading: isHolidaysLoading } = useCollection(user, holidaysCollectionRef);
 
     const holidays = useMemo(() => {
         if (!holidaysData) return [];
-        // Assumes holiday documents have an ID in 'YYYY-MM-DD' format
         return holidaysData.map(h => h.id);
     }, [holidaysData]);
 
-    // 2. Create a utility to check for holidays and weekends
     const dateOptions = useMemo(() => {
         const now = new Date();
         
         const isHoliday = (date: Date) => {
-            // Check for weekends (Saturday=6, Sunday=0)
             const day = date.getDay();
             if (day === 0 || day === 6) return true;
 
-            // Check against the list of national holidays from Firestore
             const dateString = format(date, 'yyyy-MM-dd');
             return holidays.includes(dateString);
         };
@@ -260,9 +255,8 @@ export default function IzinPage() {
                             <CardDescription>Isi formulir untuk mengajukan ketidakhadiran atau izin meninggalkan sekolah. Pengajuan akan ditinjau oleh Kepala Sekolah.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            { /* 3. Show alerts for holidays */ }
                             {dateOptions.today.isHoliday && selectedDateValue === 'today' && (
-                                <Alert variant="warning">
+                                <Alert variant="default"> 
                                     <Info className="h-4 w-4" />
                                     <AlertTitle>Hari Ini Adalah Hari Libur</AlertTitle>
                                     <AlertDescription>
@@ -292,7 +286,6 @@ export default function IzinPage() {
                                 </Alert>
                             )}
 
-                            {/* 4. Disable select options based on holiday status */}
                             <FormField
                                 control={form.control}
                                 name="leaveDate"
@@ -383,7 +376,7 @@ export default function IzinPage() {
                                {(isSubmitting || isChecking) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                {getSubmitButtonText()}
                             </Button>
-                        </CardFooter
+                        </CardFooter>
                     </form>
                 </Form>
             </Card>
