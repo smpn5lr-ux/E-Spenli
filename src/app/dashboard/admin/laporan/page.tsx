@@ -4,10 +4,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, startOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { id } from 'date-fns/locale';
-// import { useDebounce } from '@/hooks/use-debounce'; // TEMPORARILY DISABLED
 import { useFirestore, useUser } from '@/firebase';
-import { collection, getDocs, query } from 'firebase/firestore';
-import { calculateMultipleUserStats } from '@/lib/attendance';
+import { collection, getDocs, query, doc, onSnapshot } from 'firebase/firestore';
+import { calculateMultipleUserStats } from '@/lib/attendance/calculateStats'; // UPDATED IMPORT
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -42,8 +41,7 @@ export default function AdminLaporanPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
 
-  // const debouncedSearchTerm = useDebounce(searchTerm, 300); // TEMPORARILY DISABLED
-  const debouncedSearchTerm = searchTerm; // Using raw search term
+  const debouncedSearchTerm = searchTerm; // Simplified for now
 
   const fetchStats = useCallback(async () => {
     if (!firestore || !user) return;
@@ -52,7 +50,7 @@ export default function AdminLaporanPage() {
       const usersSnapshot = await getDocs(query(collection(firestore, 'users')));
       const users = usersSnapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(u => (u as any).role !== 'admin'); // FIX: Type-safe filtering
+        .filter(u => (u as any).role !== 'admin');
       const userStats = await calculateMultipleUserStats(firestore, users, currentMonth);
       setStats(userStats);
     } catch (error) {
@@ -63,26 +61,22 @@ export default function AdminLaporanPage() {
     }
   }, [firestore, user, currentMonth, toast]);
 
-  // Initial fetch
+  // Initial fetch and real-time listener for schoolConfig changes
   useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+    if (!firestore) return;
 
-  // **DEFINITIVE FIX #2: AUTO-REFRESH ON RETURN**
-  // Uses the 'pageshow' event, which correctly fires on back/forward navigation.
-  useEffect(() => {
-    const handlePageShow = (event: PageTransitionEvent) => {
-      // event.persisted is true if the page is from the back/forward cache.
-      if (event.persisted) {
-        console.log("Page shown from cache, forcing data refetch.");
-        fetchStats();
-      }
-    };
-    window.addEventListener('pageshow', handlePageShow);
-    return () => {
-      window.removeEventListener('pageshow', handlePageShow);
-    };
-  }, [fetchStats]);
+    fetchStats(); // Fetch initial data
+
+    const configRef = doc(firestore, 'schoolConfig', 'default');
+    const unsubscribe = onSnapshot(configRef, (doc) => {
+      console.log("School config changed, refetching stats...");
+      toast({ title: 'Konfigurasi berubah', description: 'Menghitung ulang laporan dengan data terbaru...' });
+      fetchStats(); // Refetch stats when config changes
+    });
+
+    return () => unsubscribe(); // Cleanup listener on component unmount
+  }, [fetchStats, firestore, toast]);
+
 
   const filteredStats = useMemo(() => {
     return stats.filter(stat => 
@@ -109,7 +103,7 @@ export default function AdminLaporanPage() {
     <Card>
       <CardHeader>
         <CardTitle>Laporan Ringkasan Kehadiran</CardTitle>
-        <CardDescription>Ringkasan kehadiran bulanan untuk seluruh personil sekolah.</CardDescription>
+        <CardDescription>Ringkasan kehadiran bulanan untuk seluruh personil sekolah. Persentase dihitung berdasarkan bobot nilai yang telah diatur.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
@@ -119,19 +113,7 @@ export default function AdminLaporanPage() {
             <Button variant="outline" size="icon" onClick={() => handleMonthChange('next')} disabled={isSameMonth(currentMonth, new Date())}><ChevronRight className="h-4 w-4" /></Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {/* **DEFINITIVE FIX #1: PAGE FREEZE** */}
-            {/* Uses setTimeout to ensure this code runs *after* the UI library's own event cycle. */}
-            <Select 
-              value={roleFilter} 
-              onValueChange={setRoleFilter}
-              onOpenChange={(isOpen) => {
-                if (!isOpen) {
-                  setTimeout(() => {
-                    document.body.style.pointerEvents = 'auto';
-                  }, 0);
-                }
-              }}
-            >
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
               <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Semua Peran" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Peran</SelectItem>
@@ -150,7 +132,7 @@ export default function AdminLaporanPage() {
 
         <div className="border rounded-md overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead className="text-center">Hadir</TableHead><TableHead className="text-center">Sakit</TableHead><TableHead className="text-center">Izin</TableHead><TableHead className="text-center">Alpa</TableHead><TableHead className="text-center">Persentase</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead className="text-center">Hadir</TableHead><TableHead className="text-center">Sakit</TableHead><TableHead className="text-center">Izin/Dinas</TableHead><TableHead className="text-center">Alpa</TableHead><TableHead className="text-center">Persentase</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
@@ -173,7 +155,7 @@ export default function AdminLaporanPage() {
                     <TableCell className="text-center">{stat.totalIzin}</TableCell>
                     <TableCell className="text-center text-destructive font-semibold">{stat.totalAlpa}</TableCell>
                     <TableCell className="text-center font-bold">{stat.percentage.toFixed(1)}%</TableCell>
-                    <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => handleEdit(stat.userId)}><Edit className="h-4 w-4 mr-2"/>Edit/Detail</Button></TableCell>
+                    <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => handleEdit(stat.userId)}><Edit className="h-4 w-4 mr-2"/>Detail</Button></TableCell>
                   </TableRow>
                 ))
               ) : (

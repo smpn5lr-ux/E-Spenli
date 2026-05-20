@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import QRCode from 'qrcode';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -72,13 +72,11 @@ const statusKeyToLabelMap: { [key: string]: string } = {
 
 // --- CHILD COMPONENTS ---
 
-function MonthlyConfigCalendar({ user, schoolConfig }: { user: any, schoolConfig: any }) {
-  const { toast } = useToast();
+function MonthlyConfigCalendar({ user, schoolConfig, onHolidaysChange }: { user: any, schoolConfig: any, onHolidaysChange: (holidays: Date[], workDays: number, monthId: string) => void }) {
   const firestore = useFirestore();
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
   const [holidays, setHolidays] = useState<Date[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
-
+  
   const monthlyConfigId = useMemo(() => format(currentMonth, 'yyyy-MM'), [currentMonth]);
   const monthlyConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'monthlyConfigs', monthlyConfigId) : null, [firestore, monthlyConfigId]);
   
@@ -97,20 +95,9 @@ function MonthlyConfigCalendar({ user, schoolConfig }: { user: any, schoolConfig
     return allDaysInMonth.filter(day => !recurringOffDays.includes(day.getDay()) && !specificHolidays.has(format(day, 'yyyy-MM-dd'))).length;
   }, [allDaysInMonth, holidays, schoolConfig]);
 
-  const handleSave = async () => {
-    if (!monthlyConfigRef) return;
-    setIsSaving(true);
-    try {
-      const dataToSave = { id: monthlyConfigId, holidays: holidays.map(d => format(d, 'yyyy-MM-dd')), workDays: calculatedWorkDays };
-      await setDoc(monthlyConfigRef, dataToSave, { merge: true });
-      toast({ title: 'Berhasil', description: 'Pengaturan hari libur spesifik telah disimpan.' });
-    } catch (error) {
-      console.error('Error saving monthly config:', error);
-      toast({ variant: 'destructive', title: 'Gagal', description: 'Gagal menyimpan pengaturan.' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  useEffect(() => {
+    onHolidaysChange(holidays, calculatedWorkDays, monthlyConfigId);
+  }, [holidays, calculatedWorkDays, monthlyConfigId, onHolidaysChange]);
 
   const handleDayToggle = (day: Date, checked: boolean) => {
     setHolidays(prev => checked ? [...prev, day] : prev.filter(d => format(d, 'yyyy-MM-dd') !== format(day, 'yyyy-MM-dd')));
@@ -157,9 +144,6 @@ function MonthlyConfigCalendar({ user, schoolConfig }: { user: any, schoolConfig
                 </div>
             </div>
         </CardContent>
-        <CardFooter className="border-t p-4 sm:p-6">
-            <Button onClick={handleSave} disabled={isSaving}>{isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Pengaturan Bulan Ini</Button>
-        </CardFooter>
     </Card>
   );
 }
@@ -196,6 +180,9 @@ export default function KonfigurasiAbsenPage() {
 
   // Form State: Attendance Weights
   const [attendanceWeights, setAttendanceWeights] = useState(defaultAttendanceWeights);
+
+  // Form State: Monthly Holidays
+  const [monthlyHolidayData, setMonthlyHolidayData] = useState<{holidays: Date[], workDays: number, monthId: string} | null>(null);
   
   // --- Firestore Data ---
   const schoolConfigRef = useMemoFirebase(() => doc(firestore, 'schoolConfig', 'default'), [firestore]);
@@ -252,6 +239,10 @@ export default function KonfigurasiAbsenPage() {
 
   // --- Handlers ---
 
+  const handleMonthlyHolidaysChange = useCallback((holidays: Date[], workDays: number, monthId: string) => {
+    setMonthlyHolidayData({ holidays, workDays, monthId });
+  }, []);
+
   const handleTimeChange = (day: number, type: 'start' | 'end', value: string) => {
     setCheckOutTimes(prev => ({ ...prev, [day]: { ...(prev[day as keyof typeof prev] || {}), [type]: value } }));
   };
@@ -306,7 +297,7 @@ export default function KonfigurasiAbsenPage() {
     );
   };
 
- const handleSave = () => {
+ const handleSave = async () => {
     if (!schoolConfigRef) return;
     setIsSaving(true);
 
@@ -322,7 +313,18 @@ export default function KonfigurasiAbsenPage() {
             attendanceWeights,
         };
 
-        setDocumentNonBlocking(schoolConfigRef, dataToSave, { merge: true });
+        await setDoc(schoolConfigRef, dataToSave, { merge: true });
+
+        if (monthlyHolidayData && firestore) {
+            const monthlyRef = doc(firestore, 'monthlyConfigs', monthlyHolidayData.monthId);
+            const monthlyData = { 
+                id: monthlyHolidayData.monthId,
+                holidays: monthlyHolidayData.holidays.map(d => format(d, 'yyyy-MM-dd')),
+                workDays: monthlyHolidayData.workDays 
+            };
+            await setDoc(monthlyRef, monthlyData, { merge: true });
+        }
+
         toast({ title: 'Pengaturan Disimpan', description: 'Konfigurasi absensi telah berhasil diperbarui.' });
     } catch (err) {
         console.error("Save failed: ", err);
@@ -344,7 +346,7 @@ export default function KonfigurasiAbsenPage() {
 
   return (
     <TooltipProvider>
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       {/* General Settings & QR Code */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-1">
@@ -471,11 +473,13 @@ export default function KonfigurasiAbsenPage() {
       </div>
 
       {/* Monthly Holiday Settings */}
-      {schoolConfigData && <MonthlyConfigCalendar user={user} schoolConfig={schoolConfigData} />}
+      {schoolConfigData && <MonthlyConfigCalendar user={user} schoolConfig={schoolConfigData} onHolidaysChange={handleMonthlyHolidaysChange} />}
 
-      {/* Save Button */}
-      <div className="flex justify-end sticky bottom-6">
-          <Button size="lg" onClick={handleSave} disabled={isSaving}>{isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Semua Pengaturan</Button>
+      {/* Save Button Wrapper */}
+      <div className="fixed bottom-6 right-6 z-50">
+          <Button size="lg" onClick={handleSave} disabled={isSaving}>
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Semua Pengaturan
+          </Button>
       </div>
     </div>
     </TooltipProvider>

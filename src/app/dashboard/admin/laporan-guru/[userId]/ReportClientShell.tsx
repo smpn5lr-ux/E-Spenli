@@ -1,22 +1,20 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, parseISO, isValid, eachDayOfInterval, isWithinInterval, isBefore, startOfDay } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 // Firebase and custom hooks for real-time data
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, where, Timestamp } from 'firebase/firestore';
+import { useFirestore, useCollection, useDoc, useMemoFirebase } from '@/firebase';
+import { collection, query, where, Timestamp, doc } from 'firebase/firestore';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Download, ChevronLeft, ChevronRight, CheckCircle2, XCircle, FileWarning, CalendarClock, Loader2 } from 'lucide-react';
-import ReportView from './ReportView'; // Correct default import
+import { Download, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import ReportView from './ReportView';
 
 // --- Type Definitions ---
 interface AttendanceRecordServer {
@@ -39,18 +37,23 @@ interface ClientShellProps {
   userId: string;
   initialUserData: any;
   initialMonth: string; // ISO string from server
-  initialSchoolConfig: any;
 }
+
+const mapLeaveTypeToStatusKey = (leaveType: string): string => {
+    switch(leaveType) {
+        case 'Sakit':
+        case 'Izin': return 'permission';
+        case 'Dinas': return 'official_duty';
+        default: return leaveType.toLowerCase();
+    }
+};
 
 export default function ReportClientShell({ 
     userId, 
     initialUserData,
     initialMonth,
-    initialSchoolConfig,
 }: ClientShellProps) {
     const router = useRouter();
-    const pathname = usePathname();
-    const searchParams = useSearchParams();
     const firestore = useFirestore();
 
     const [userData] = useState(initialUserData);
@@ -58,6 +61,9 @@ export default function ReportClientShell({
     const [currentMonth, setCurrentMonth] = useState(isValid(parsedInitialMonth) ? parsedInitialMonth : new Date());
 
     // --- Real-time Data Fetching ---
+    const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
+    const { data: schoolConfig, isLoading: isConfigLoading } = useDoc(null, schoolConfigRef);
+    
     const monthStart = useMemo(() => startOfMonth(currentMonth), [currentMonth]);
     const monthEnd = useMemo(() => endOfMonth(currentMonth), [currentMonth]);
 
@@ -81,10 +87,10 @@ export default function ReportClientShell({
     const { data: leaveHistory, isLoading: isLeaveLoading } = useCollection<LeaveRequestServer>(null, leaveQuery);
 
     const reportDetails = useMemo(() => {
-        if (!attendanceHistory || !leaveHistory || !initialSchoolConfig) return [];
+        if (!attendanceHistory || !leaveHistory || !schoolConfig) return [];
         
         const today = startOfDay(new Date());
-        const offDays: number[] = Array.isArray(initialSchoolConfig.offDays) ? initialSchoolConfig.offDays : [0, 6];
+        const offDays: number[] = Array.isArray(schoolConfig.offDays) ? schoolConfig.offDays : [0, 6];
 
         const attendanceMap = new Map(attendanceHistory.map(rec => [rec.id, rec]));
         const leaveMap = new Map<string, any>();
@@ -103,72 +109,83 @@ export default function ReportClientShell({
         const report = allDaysInMonth.map(day => {
             const dayStr = format(day, 'yyyy-MM-dd');
             const isRecurringOff = offDays.includes(day.getDay());
-            if (isRecurringOff || isBefore(today, day)) return null;
+            if (isRecurringOff || isBefore(day, today)) return null;
 
             const attendanceRecord = attendanceMap.get(dayStr);
             if (attendanceRecord) {
                 const checkInTime = attendanceRecord.checkInTime.toDate();
                 const checkOutTime = attendanceRecord.checkOutTime?.toDate();
-                let status = 'Hadir';
-                let description = 'Kehadiran Penuh';
+                let statusKey = 'present'; // Default to present
 
-                if (initialSchoolConfig.useTimeValidation && initialSchoolConfig.checkInEndTime) {
-                    const [endH, endM] = initialSchoolConfig.checkInEndTime.split(':').map(Number);
+                if (schoolConfig.useTimeValidation && schoolConfig.checkInEndTime) {
+                    const [endH, endM] = schoolConfig.checkInEndTime.split(':').map(Number);
                     const checkInDeadline = new Date(checkInTime); checkInDeadline.setHours(endH, endM, 0, 0);
-                    if (isBefore(checkInTime, checkInDeadline)) {
-                        status = 'Hadir';
-                        description = 'Tepat Waktu';
-                    } else {
-                        status = 'Terlambat';
-                        description = 'Absen masuk setelah batas waktu.';
+                    if (isBefore(checkInDeadline, checkInTime)) {
+                        statusKey = 'late';
                     }
-                } else {
-                    description = 'Absen Terekam';
                 }
 
                 if (!checkOutTime && isBefore(day, today)) {
-                    status = 'Tidak Pulang';
-                    description = 'Tidak melakukan absen pulang.';
+                    statusKey = 'no_check_out';
                 }
 
-                if (attendanceRecord.manualEntry) {
-                    description += ' (Manual)';
-                }
-
-                return { id: dayStr, date: day, checkInTime, checkOutTime, status, description, raw: attendanceRecord };
+                return { id: dayStr, date: day, checkInTime, checkOutTime, statusKey, raw: attendanceRecord };
             }
             
             const leaveRecord = leaveMap.get(dayStr);
             if (leaveRecord && leaveRecord.type !== 'Pulang Cepat') {
-                return { id: dayStr, date: day, checkInTime: null, checkOutTime: null, status: leaveRecord.type, description: leaveRecord.reason, raw: leaveRecord };
+                 return { id: dayStr, date: day, checkInTime: null, checkOutTime: null, statusKey: mapLeaveTypeToStatusKey(leaveRecord.type), raw: leaveRecord };
             }
 
-            return { id: dayStr, date: day, checkInTime: null, checkOutTime: null, status: 'Alpa', description: 'Tidak Ada Keterangan', raw: null };
+            return { id: dayStr, date: day, checkInTime: null, checkOutTime: null, statusKey: 'absent', raw: null };
         });
 
         const validReport = report.filter(Boolean) as any[];
         validReport.sort((a, b) => b.date.getTime() - a.date.getTime());
         return validReport;
 
-    }, [attendanceHistory, leaveHistory, initialSchoolConfig, currentMonth]);
+    }, [attendanceHistory, leaveHistory, schoolConfig, currentMonth]);
 
     const summaryStats = useMemo(() => {
-        const hadir = reportDetails.filter(d => d.status === 'Hadir').length;
-        const terlambat = reportDetails.filter(d => d.status === 'Terlambat').length;
-        const sakit = reportDetails.filter(d => d.status === 'Sakit').length;
-        const izin = reportDetails.filter(d => d.status === 'Izin' || d.status === 'Dinas').length;
-        const alpa = reportDetails.filter(d => d.status === 'Alpa').length;
-        const tidakPulang = reportDetails.filter(d => d.status === 'Tidak Pulang').length;
-        return { hadir, terlambat, sakit, izin, alpa, tidakPulang };
+        const stats = {
+            present: 0, late: 0, no_check_out: 0, permission: 0, official_duty: 0, absent: 0
+        };
+        reportDetails.forEach(d => {
+            if (d.statusKey in stats) {
+                stats[d.statusKey as keyof typeof stats]++;
+            }
+        });
+        return stats;
     }, [reportDetails]);
 
+    const scoreCalculation = useMemo(() => {
+        if (!reportDetails.length || !schoolConfig?.attendanceWeights) {
+            return { totalScore: 0, maxScore: 0, percentage: 0 };
+        }
+
+        const weights = schoolConfig.attendanceWeights;
+        const presentWeight = weights.present ?? 1;
+
+        let totalScore = 0;
+        let maxScore = 0;
+
+        reportDetails.forEach(detail => {
+            totalScore += weights[detail.statusKey] ?? 0;
+            maxScore += presentWeight; // Max score is based on full attendance
+        });
+
+        const percentage = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
+
+        return { totalScore: totalScore.toFixed(2), maxScore: maxScore.toFixed(2), percentage: percentage.toFixed(2) };
+    }, [reportDetails, schoolConfig]);
+
     const chartData = [
-        { name: 'Hadir', Jumlah: summaryStats.hadir, fill: '#22c55e' },
-        { name: 'Terlambat', Jumlah: summaryStats.terlambat, fill: '#facc15' },
-        { name: 'Sakit', Jumlah: summaryStats.sakit, fill: '#f97316' },
-        { name: 'Izin/Dinas', Jumlah: summaryStats.izin, fill: '#3b82f6' },
-        { name: 'Alpa', Jumlah: summaryStats.alpa, fill: '#ef4444' },
-        { name: 'Tdk Pulang', Jumlah: summaryStats.tidakPulang, fill: '#eab308' },
+        { name: 'Hadir', Jumlah: summaryStats.present, fill: '#22c55e' },
+        { name: 'Terlambat', Jumlah: summaryStats.late, fill: '#facc15' },
+        { name: 'Izin/Sakit', Jumlah: summaryStats.permission, fill: '#3b82f6' },
+        { name: 'Dinas', Jumlah: summaryStats.official_duty, fill: '#818cf8' },
+        { name: 'Alpa', Jumlah: summaryStats.absent, fill: '#ef4444' },
+        { name: 'Tdk Pulang', Jumlah: summaryStats.no_check_out, fill: '#eab308' },
     ];
 
     const handleMonthChange = (amount: number) => {
@@ -177,21 +194,37 @@ export default function ReportClientShell({
     };
 
     const handleDownloadPdf = () => {
-        // PDF generation logic would need to be updated to use the new `reportDetails` structure.
-        // This is a placeholder for now.
+        // PDF generation logic needs update
     };
     
-    const isLoading = isAttendanceLoading || isLeaveLoading;
+    const isLoading = isAttendanceLoading || isLeaveLoading || isConfigLoading;
 
     return (
         <div className="p-4 md:p-6 space-y-6">
              <Card>
                 <CardHeader>
                     <CardTitle>Ringkasan Laporan Bulan {format(currentMonth, 'MMMM yyyy', { locale: id })}</CardTitle>
-                    <CardDescription>Grafik ringkasan kehadiran untuk {userData?.name || 'Pengguna'}.</CardDescription>
+                    <CardDescription>Grafik dan skor ringkasan kehadiran untuk {userData?.name || 'Pengguna'}.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                   {/* The chart and stat cards would go here */}
+                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                    <div className="md:col-span-2 h-64 w-full">
+                        {isLoading ? <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary"/> : 
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" fontSize={12} />
+                                <YAxis allowDecimals={false} />
+                                <Tooltip />
+                                <Bar dataKey="Jumlah" />
+                            </BarChart>
+                        </ResponsiveContainer>}
+                    </div>
+                    <div className="md:col-span-1 flex flex-col items-center justify-center p-6 bg-muted rounded-lg">
+                        <p className="text-sm font-medium text-muted-foreground">SKOR AKHIR</p>
+                        {isLoading ? <Loader2 className="h-12 w-12 animate-spin my-4 text-primary"/> : 
+                        <p className="text-5xl font-bold tracking-tighter text-primary">{scoreCalculation.percentage}<span className="text-2xl text-muted-foreground">%</span></p>}
+                        <p className="text-xs text-center text-muted-foreground mt-2">Total Poin: {scoreCalculation.totalScore} / {scoreCalculation.maxScore}</p>
+                    </div>
                 </CardContent>
             </Card>
 
@@ -234,7 +267,7 @@ export default function ReportClientShell({
                                     </TableRow>
                                 ) : reportDetails.length > 0 ? (
                                     reportDetails.map((item) => (
-                                        <ReportView key={item.id} item={item} userId={userId} schoolConfig={initialSchoolConfig} />
+                                        <ReportView key={item.id} item={item} userId={userId} schoolConfig={schoolConfig} />
                                     ))
                                 ) : (
                                     <TableRow>

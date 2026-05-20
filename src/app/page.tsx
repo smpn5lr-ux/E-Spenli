@@ -90,9 +90,11 @@ export default function LoginPage() {
     }
     try {
       await signInWithEmailAndPassword(auth, values.email, values.password);
+      // On success, we don't set loading to false. The useEffect hook will redirect
+      // to the dashboard, and this component will unmount.
     } catch (error: any) {
       toast({ variant: "destructive", title: "Login Gagal", description: "Email atau password salah." });
-    } finally {
+      // On error, we set loading to false so the user can try again.
       setIsLoginLoading(false);
     }
   };
