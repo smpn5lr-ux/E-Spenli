@@ -73,20 +73,21 @@ export async function calculateMultipleUserStats(firestore: any, users: any[], m
                 return; // Skip off-days
             }
 
-            let statusKey = 'absent'; // Default to absent
-            let leaveType = null;
+            let statusKey: string;
 
-            if (attendanceRecords.has(dayStr)) {
-                const record = attendanceRecords.get(dayStr);
-                statusKey = record.statusKey || 'present'; // Use pre-calculated status if available
+            const record = attendanceRecords.get(dayStr);
+            const leaveType = leaveRecords.get(dayStr);
+
+            if (record) {
+                statusKey = record.statusKey || 'present';
                 if (statusKey === 'present') totalHadir++;
-            } else if (leaveRecords.has(dayStr)) {
-                leaveType = leaveRecords.get(dayStr);
+            } else if (leaveType) {
                 statusKey = mapLeaveTypeToStatusKey(leaveType);
                 if (leaveType === 'Izin') totalIzin++;
                 else if (leaveType === 'Sakit') totalSakit++;
                 else if (leaveType === 'Dinas') totalDinas++;
             } else {
+                statusKey = 'absent';
                 totalAlpa++;
             }
             

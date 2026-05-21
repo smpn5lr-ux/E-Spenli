@@ -48,12 +48,10 @@ export default function UserReportDetailModal({ user, month, isOpen, onClose }: 
             setIsLoading(true);
             setError(null);
             try {
-                // Ambil konfigurasi sekolah untuk diteruskan ke fungsi fetch
                 const schoolConfigRef = doc(firestore, 'schoolConfig', 'default');
                 const schoolConfigSnap = await getDoc(schoolConfigRef);
                 const schoolConfig = schoolConfigSnap.data() || {};
 
-                // Convert month string to a Date. If month is in YYYY-MM format, use the first day of that month.
                 let monthDate: Date;
                 const ymMatch = month.match(/^(\d{4})-(\d{2})$/);
                 if (ymMatch) {
@@ -64,9 +62,7 @@ export default function UserReportDetailModal({ user, month, isOpen, onClose }: 
                     monthDate = new Date(month);
                 }
 
-                // The fetchUserMonthlyReportData helper expects a Date for the month parameter and an options object as fifth parameter.
                 const reportData = await fetchUserMonthlyReportData(firestore, user.uid, monthDate, schoolConfig, {});
-                // reportData may be an array of report items. Normalize to ReportDetail shape.
                 const normalized: ReportDetail[] = (reportData as any[]).map(item => ({
                     id: item.id,
                     dateString: item.dateString || item.date || item.date_formatted || '',
@@ -95,13 +91,13 @@ export default function UserReportDetailModal({ user, month, isOpen, onClose }: 
                     <DialogDescription>
                         Menampilkan rincian kehadiran untuk {user?.name} pada bulan {month}.
                     </DialogDescription>
-                    {error && (
-                        <Alert variant="destructive" className="mt-4">
-                            <AlertTitle>Terjadi Kesalahan</AlertTitle>
-                            <AlertDescription>{error}</AlertDescription>
-                        </Alert>
-                    )}
                 </DialogHeader>
+                {error && (
+                    <Alert variant="destructive" className="mt-4">
+                        <AlertTitle>Terjadi Kesalahan</AlertTitle>
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                )}
                 <div className="mt-4 max-h-[60vh] overflow-y-auto">
                     {isLoading ? (
                         <div className="flex items-center justify-center h-48">
