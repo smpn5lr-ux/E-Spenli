@@ -143,7 +143,7 @@ export default function EditAttendancePage() {
     const [isSaving, setIsSaving] = useState(false);
     const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
-    const handleSave = async (action: 'present' | 'leave', reason?: string) => {
+    const handleSave = async (action: 'present' | 'leave' | 'sick', reason?: string) => {
         if (!selectedDay) return;
 
         setIsSaving(true);
@@ -154,17 +154,17 @@ export default function EditAttendancePage() {
             
             let record: any;
 
-            if (action === 'leave') {
+            if (action === 'leave' || action === 'sick') {
                 record = {
                     id: recordId,
                     userId: userId,
                     userName: userData?.name,
                     userRole: userData?.role,
                     recordDate: Timestamp.fromDate(recordDate),
-                    status: 'Izin',
+                    status: action === 'leave' ? 'Izin' : 'Sakit',
                     description: reason,
                 };
-            } else {
+            } else { // present
                 record = {
                     id: recordId,
                     userId: userId,

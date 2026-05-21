@@ -181,16 +181,16 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
     
     const isLoading = isAttendanceLoading || isLeaveLoading || isConfigLoading;
 
-    // Diagnostic log to confirm component update
-    console.log("--- ReportClientShell BERHASIL DI-UPDATE ---", new Date().toLocaleTimeString());
-
     return (
         <>
+            <h1 style={{ color: 'red', fontSize: '36px', fontWeight: 'bold' }}>
+                INI ADALAH FILE ReportClientShell.tsx
+            </h1>
             <Dialog open={!!editingDays} onOpenChange={handleCloseModal}>
-              <DialogContent className="sm:max-w-[480px]">
+              <DialogContent className="sm:max-w-[480px]" aria-describedby="edit-attendance-description">
                 <DialogHeader>
                   <DialogTitle>Perbaiki Kehadiran</DialogTitle>
-                  <DialogDescription>
+                  <DialogDescription id="edit-attendance-description">
                     Pilih tindakan perbaikan untuk setiap tanggal yang berstatus Alpa.
                   </DialogDescription>
                 </DialogHeader>
@@ -199,7 +199,7 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                     {(editingDays || []).map((day) => (
                       <div key={day.id} className="p-4 border rounded-md">
                         <p className="font-semibold mb-3">{format(day.date, 'EEEE, dd MMMM yyyy', { locale: id })}</p>
-                        <RadioGroup onValueChange={(value) => handleRadioChange(day.id, value)}>
+                        <RadioGroup value={changes[day.id] || ''} onValueChange={(value) => handleRadioChange(day.id, value)}>
                           <div className="flex items-center space-x-2">
                             <RadioGroupItem value="hadir" id={`hadir-${day.id}`} />
                             <Label htmlFor={`hadir-${day.id}`}>Jadikan Hadir</Label>

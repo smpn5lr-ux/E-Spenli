@@ -174,17 +174,7 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
              return { text: 'Ajukan Kembali Keterlambatan', disabled: false, page: '/dashboard/terlambat/ajukan' };
         }
 
-        let effectiveStatus = attendanceWindowStatus;
-        const checkOutEndStr = schoolConfigData?.checkOutEndTime;
-        if (checkOutEndStr && (effectiveStatus === 'CHECK_OUT_OPEN' || effectiveStatus === 'CLOSED')) {
-            const [endH, endM] = checkOutEndStr.split(':').map(Number);
-            const checkOutEnd = setMinutes(setHours(startOfDay(currentTime), endH), endM);
-            if (currentTime > checkOutEnd) {
-                effectiveStatus = 'CLOSED';
-            }
-        }
-
-        switch (effectiveStatus) {
+        switch (attendanceWindowStatus) {
             case 'HOLIDAY':
                 return { text: 'Hari Libur', disabled: true, page: '#' };
 
@@ -192,7 +182,7 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                 return hasCheckedIn ? { text: 'Sudah Absen Masuk', disabled: true, page: '#' } : { text: 'Absen Masuk', disabled: false, page: '/dashboard/absen' };
 
             case 'CHECK_OUT_OPEN':
-                return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' };
+                return hasCheckedIn ? { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' } : { text: 'Anda Belum Absen Masuk', disabled: true, page: '#' };
 
             case 'CLOSED':
                 const isLatePeriod = !hasCheckedIn && checkInEnd && currentTime > checkInEnd && (!checkOutStart || currentTime < checkOutStart);
@@ -201,7 +191,11 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                 }
 
                 if (hasCheckedIn && !hasCheckedOut) {
-                    return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' }; 
+                    if (checkOutStart && currentTime < checkOutStart) {
+                        return { text: 'Belum Waktunya Pulang', disabled: true, page: '#' };
+                    } else {
+                        return { text: 'Sesi Pulang Berakhir', disabled: true, page: '#' };
+                    }
                 }
                 
                 return { text: 'Absensi Ditutup', disabled: true, page: '#' };

@@ -20,7 +20,7 @@ import { id } from 'date-fns/locale';
 interface EditAttendanceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (action: 'present' | 'leave', reason?: string) => void;
+  onSave: (action: 'present' | 'leave' | 'sick', reason?: string) => void;
   date: Date | null;
   isSaving: boolean;
 }
@@ -32,13 +32,13 @@ export default function EditAttendanceModal({
   date,
   isSaving,
 }: EditAttendanceModalProps) {
-  const [action, setAction] = useState<'present' | 'leave'>('present');
+  const [action, setAction] = useState<'present' | 'leave' | 'sick'>('present');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const handleSave = () => {
-    if (action === 'leave' && !reason.trim()) {
-      setError('Keterangan izin tidak boleh kosong.');
+    if ((action === 'leave' || action === 'sick') && !reason.trim()) {
+      setError('Keterangan (Izin/Sakit) tidak boleh kosong.');
       return;
     }
     setError(null);
@@ -65,7 +65,7 @@ export default function EditAttendanceModal({
           </DialogDescription>
         </DialogHeader>
         <div className="py-4">
-          <RadioGroup value={action} onValueChange={(value) => setAction(value as 'present' | 'leave')}>
+          <RadioGroup value={action} onValueChange={(value) => setAction(value as 'present' | 'leave' | 'sick')}>
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="present" id="r1" />
               <Label htmlFor="r1">Jadikan Hadir</Label>
@@ -74,16 +74,20 @@ export default function EditAttendanceModal({
               <RadioGroupItem value="leave" id="r2" />
               <Label htmlFor="r2">Jadikan Izin</Label>
             </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="sick" id="r3" />
+              <Label htmlFor="r3">Jadikan Sakit</Label>
+            </div>
           </RadioGroup>
 
-          {action === 'leave' && (
+          {(action === 'leave' || action === 'sick') && (
             <div className="mt-4">
-              <Label htmlFor="reason" className="font-semibold">Keterangan Izin</Label>
+              <Label htmlFor="reason" className="font-semibold">Keterangan (Izin/Sakit)</Label>
               <Textarea
                 id="reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Contoh: Mengikuti rapat dinas di luar sekolah"
+                placeholder="Contoh: Sakit demam, atau mengikuti rapat dinas..."
                 className="mt-2"
               />
               {error && <p className="text-sm text-destructive mt-2">{error}</p>}
