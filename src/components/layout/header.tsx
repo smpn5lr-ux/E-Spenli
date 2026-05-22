@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Avatar, AvatarImage, AvatarFallback } from '../ui/avatar';
 import { useUser, useFirestore, useMemoFirebase, useAuth } from '@/firebase';
-import { useDoc } from '@/firebase/firestore/use-doc'; // FIX: Direct import
+import { useDoc } from '@/firebase/firestore/use-doc';
 import { doc } from 'firebase/firestore';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import {
@@ -23,11 +23,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { LogOut, Settings, ShieldAlert } from 'lucide-react';
+import { LogOut, Settings, ShieldAlert, BookOpen } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { ModeToggle } from '@/components/theme-toggle';
-import NetworkStatus from '@/components/utilities/NetworkStatus'; // Import NetworkStatus
-import { ClientOnly } from '@/components/utilities/ClientOnly'; // Impor ClientOnly
+import NetworkStatus from '@/components/utilities/NetworkStatus';
+import { ClientOnly } from '@/components/utilities/ClientOnly';
+import { RoleBasedGuide } from '@/components/guides/RoleBasedGuide';
 
 export function Header({ isTransparent }: { isTransparent?: boolean }) {
   const firestore = useFirestore();
@@ -46,7 +47,6 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
   const handleLogout = async () => {
     if(!auth) return;
     await signOut(auth);
-    // PERBAIKAN: Menggunakan window.location.href untuk full page reload
     window.location.href = '/'; 
   };
 
@@ -56,10 +56,11 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
   }
 
   const displayName = user?.displayName || userData?.name;
-  
+  const userRole = userData?.role || '';
+
   const getDisplayRole = () => {
-    if (userData?.role) {
-      return userData.role.replace('_', ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    if (userRole) {
+      return userRole.replace('_', ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     }
     return "User";
   }
@@ -75,7 +76,6 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
 
   return (
     <header className={headerClasses}>
-      {/* Left section: User Profile and utilities */}
       <div className="flex items-center gap-3">
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -100,6 +100,12 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
                     </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <RoleBasedGuide role={userRole}>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                        <BookOpen className="mr-2 h-4 w-4" />
+                        <span>Panduan</span>
+                    </DropdownMenuItem>
+                </RoleBasedGuide>
                 <DropdownMenuItem asChild>
                     <Link href="/dashboard/pengaturan">
                     <Settings className="mr-2 h-4 w-4" />
@@ -116,11 +122,9 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
         <ClientOnly>
           <ModeToggle />
         </ClientOnly>
-        {/* ADDED NETWORK STATUS INDICATOR */}
         <NetworkStatus />
       </div>
 
-      {/* Right Section: Logo with Dialog */}
       <Dialog>
         <DialogTrigger asChild>
           <button className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full">
