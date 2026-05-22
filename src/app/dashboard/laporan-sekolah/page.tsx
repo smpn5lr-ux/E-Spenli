@@ -13,7 +13,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -37,11 +36,9 @@ interface ReportRowData {
     totalIzin: number;
     totalSakit: number;
     totalAlpa: number;
-    persentase: string; // This remains a string for display
+    persentase: string;
     sequenceNumber: number | null;
 }
-
-// --- UTILITY & GENERATION LOGIC ---
 
 const safeFormat = (dateInput: string | Date | null | undefined, formatString: string, options: any = {}) => {
     if (!dateInput) return '-';
@@ -111,8 +108,6 @@ export default function SchoolReportPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [roleFilter, setRoleFilter] = useState("all");
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [syncMessage, setSyncMessage] = useState<{type: 'success' | 'error', message: string} | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<ReportRowData | null>(null);
     const [refetchIndex, setRefetchIndex] = useState(0);
@@ -207,7 +202,7 @@ export default function SchoolReportPage() {
             item.name,
             item.nip,
             item.position,
-            item.totalHadir, 
+            item.totalHadir,
             item.totalIzin,
             item.totalSakit,
             item.totalAlpa,
@@ -258,7 +253,7 @@ export default function SchoolReportPage() {
             head: [['No', 'Nama', 'NIP', 'Status', 'Hadir', 'Izin', 'Sakit', 'Alpa', 'Persen']],
             body: filteredReports.map(item => [
                 item.no, item.name, item.nip, item.position,
-                item.totalHadir, 
+                item.totalHadir,
                 item.totalIzin,
                 item.totalSakit,
                 item.totalAlpa, 
