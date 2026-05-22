@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, getDoc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { format, isSameMonth, addMonths, subMonths, parseISO, setHours, setMinutes, setSeconds, parse } from 'date-fns';
+import { format, isSameMonth, addMonths, subMonths, parseISO, setHours, setMinutes, setSeconds } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -69,46 +69,47 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
         const dateStr = format(recordDate, 'yyyy-MM-dd');
         const attendanceRef = doc(firestore, 'users', userId, 'attendanceRecords', dateStr);
 
-        // More robust approach: Fetch the latest document state before writing
+        // Final definitive fix: Read, Modify, then explicit Set.
         const docSnap = await getDoc(attendanceRef);
-        const existingData = docSnap.data();
+        const existingData = docSnap.data() || {};
 
-        const correctionData: any = {
-            date: dateStr,
-            description: keterangan,
-            adminEdited: true,
-            updatedAt: serverTimestamp(),
+        const finalData: any = {
+          ...existingData,
+          date: dateStr,
+          description: keterangan,
+          adminEdited: true,
+          updatedAt: serverTimestamp(),
         };
 
-        // Generate check-in time ONLY if it doesn't exist in the database record
-        if (!existingData?.checkInTime) {
+        // Generate check-in time if it doesn't exist at all.
+        if (!finalData.checkInTime) {
             const checkInStart = schoolConfig?.checkInTime?.start || '06:00';
             const checkInEnd = schoolConfig?.checkInTime?.end || '07:30';
-            correctionData.checkInTime = Timestamp.fromDate(generateRandomTime(recordDate, checkInStart, checkInEnd));
+            finalData.checkInTime = Timestamp.fromDate(generateRandomTime(recordDate, checkInStart, checkInEnd));
         }
 
-        // Generate check-out time ONLY if it doesn't exist in the database record
-        if (!existingData?.checkOutTime) {
+        // Generate check-out time if it doesn't exist at all.
+        if (!finalData.checkOutTime) {
             const checkOutStart = schoolConfig?.checkOutTime?.start || '14:00';
             const checkOutEnd = schoolConfig?.checkOutTime?.end || '17:00';
-            correctionData.checkOutTime = Timestamp.fromDate(generateRandomTime(recordDate, checkOutStart, checkOutEnd));
+            finalData.checkOutTime = Timestamp.fromDate(generateRandomTime(recordDate, checkOutStart, checkOutEnd));
         }
 
-        batch.set(attendanceRef, correctionData, { merge: true });
+        // Overwrite the document with the complete, corrected data.
+        batch.set(attendanceRef, finalData);
 
-        // If this correction is for a pending leave request, delete the request
         if (record.isCancellable) {
             const leaveRef = doc(firestore, 'users', userId, 'leaveRequests', record.id);
             batch.delete(leaveRef);
         }
 
         await batch.commit();
-        toast({ title: "Koreksi Berhasil", description: `Kehadiran untuk tanggal ${format(recordDate, 'dd/MM/yyyy')} telah diperbaiki.` });
-        onCorrectionComplete(); // Refetch the report data
+        toast({ title: "Koreksi Berhasil Disimpan", description: `Kehadiran untuk tanggal ${format(recordDate, 'dd/MM/yyyy')} telah diperbaiki.` });
+        onCorrectionComplete();
         setIsOpen(false);
     } catch (error: any) {
-        console.error("Correction failed:", error);
-        toast({ variant: "destructive", title: "Gagal Menyimpan Koreksi", description: error.message });
+        console.error("Definitive correction failed:", error);
+        toast({ variant: "destructive", title: "Gagal Total Menyimpan Koreksi", description: error.message });
     } finally {
         setIsSaving(false);
     }
