@@ -345,152 +345,143 @@ export default function KonfigurasiAbsenPage() {
   }
 
   return (
-    <>
-      <TooltipProvider>
-        <div className="space-y-6 pb-24 md:pb-6">
-          {/* General Settings & QR Code */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-1">
-              <CardHeader className="p-4 sm:p-6"><CardTitle>QR Code Absensi</CardTitle><CardDescription>Gunakan QR Code ini untuk absensi.</CardDescription></CardHeader>
-              <CardContent className="flex flex-col items-center justify-center gap-4 p-4 sm:p-6">
-                <div className="p-4 border rounded-lg bg-white aspect-square w-full max-w-[256px] relative">
-                  {isQrLoading || !qrCodeDataUrl ? <div className="w-full h-full flex items-center justify-center bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin" /></div> 
-                  : <Image src={qrCodeDataUrl} alt="QR Code Absensi" width={224} height={224} className="w-full h-full" />}
-                </div>
-                <Button onClick={handleGenerateNewQr} variant="outline" className="w-full max-w-[256px]" disabled={isQrLoading}>{isQrLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Buat QR Code Baru</Button>
-              </CardContent>
-              <CardFooter className="flex flex-col gap-2 border-t p-4 sm:p-6">
-                <Button className="w-full" onClick={() => downloadQRCode('pdf')} disabled={isQrLoading}><Download className="mr-2 h-4 w-4" />Unduh PDF</Button>
-                <Button variant="outline" className="w-full" onClick={() => downloadQRCode('png')} disabled={isQrLoading}><Download className="mr-2 h-4 w-4" />Unduh PNG</Button>
-              </CardFooter>
-            </Card>
+    <TooltipProvider>
+    <div className="space-y-6 pb-24">
+      {/* General Settings & QR Code */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-1">
+          <CardHeader className="p-4 sm:p-6"><CardTitle>QR Code Absensi</CardTitle><CardDescription>Gunakan QR Code ini untuk absensi.</CardDescription></CardHeader>
+          <CardContent className="flex flex-col items-center justify-center gap-4 p-4 sm:p-6">
+            <div className="p-4 border rounded-lg bg-white aspect-square w-full max-w-[256px] relative">
+              {isQrLoading || !qrCodeDataUrl ? <div className="w-full h-full flex items-center justify-center bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin" /></div> 
+              : <Image src={qrCodeDataUrl} alt="QR Code Absensi" width={224} height={224} className="w-full h-full" />}
+            </div>
+            <Button onClick={handleGenerateNewQr} variant="outline" className="w-full max-w-[256px]" disabled={isQrLoading}>{isQrLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Buat QR Code Baru</Button>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-2 border-t p-4 sm:p-6">
+            <Button className="w-full" onClick={() => downloadQRCode('pdf')} disabled={isQrLoading}><Download className="mr-2 h-4 w-4" />Unduh PDF</Button>
+            <Button variant="outline" className="w-full" onClick={() => downloadQRCode('png')} disabled={isQrLoading}><Download className="mr-2 h-4 w-4" />Unduh PNG</Button>
+          </CardFooter>
+        </Card>
 
-            <Card className="lg:col-span-2">
-              <CardHeader className="p-4 sm:p-6"><CardTitle>Pengaturan Absensi Umum</CardTitle><CardDescription>Atur parameter untuk sistem absensi di seluruh sekolah.</CardDescription></CardHeader>
-              <CardContent className="space-y-6 p-4 sm:p-6">
-                {/* Holiday Mode */}
-                <div className="rounded-lg border p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <div><Label htmlFor="holiday-mode" className="font-semibold">Non Aktif Sementara</Label><p className="text-sm text-muted-foreground">Jika aktif, sistem absensi non-aktif untuk semua.</p></div>
-                        <Switch id="holiday-mode" checked={holidayMode} onCheckedChange={setHolidayMode} />
-                    </div>
-                    <div className="space-y-4 pt-4 border-t">
-                        <Label className='font-medium'>Hari Libur Rutin</Label>
-                        <p className="text-sm text-muted-foreground">Pilih hari libur rutin. Absensi non-aktif pada hari ini.</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                          {daysOfWeek.map(day => (
-                              <div key={day.value} className="flex items-center space-x-2">
-                                <Checkbox id={`day-${day.value}`} checked={offDays.includes(day.value)} onCheckedChange={(checked) => handleDayToggle(day.value, !!checked)} disabled={holidayMode} />
-                                <Label htmlFor={`day-${day.value}`} className="font-normal">{day.label}</Label>
-                              </div>
-                          ))}
-                        </div>
+        <Card className="lg:col-span-2">
+          <CardHeader className="p-4 sm:p-6"><CardTitle>Pengaturan Absensi Umum</CardTitle><CardDescription>Atur parameter untuk sistem absensi di seluruh sekolah.</CardDescription></CardHeader>
+          <CardContent className="space-y-6 p-4 sm:p-6">
+            {/* Holiday Mode */}
+            <div className="rounded-lg border p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                    <div><Label htmlFor="holiday-mode" className="font-semibold">Non Aktif Sementara</Label><p className="text-sm text-muted-foreground">Jika aktif, sistem absensi non-aktif untuk semua.</p></div>
+                    <Switch id="holiday-mode" checked={holidayMode} onCheckedChange={setHolidayMode} />
+                </div>
+                <div className="space-y-4 pt-4 border-t">
+                    <Label className='font-medium'>Hari Libur Rutin</Label>
+                    <p className="text-sm text-muted-foreground">Pilih hari libur rutin. Absensi non-aktif pada hari ini.</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {daysOfWeek.map(day => (
+                          <div key={day.value} className="flex items-center space-x-2">
+                            <Checkbox id={`day-${day.value}`} checked={offDays.includes(day.value)} onCheckedChange={(checked) => handleDayToggle(day.value, !!checked)} disabled={holidayMode} />
+                            <Label htmlFor={`day-${day.value}`} className="font-normal">{day.label}</Label>
+                          </div>
+                      ))}
                     </div>
                 </div>
+            </div>
 
-                {/* Location Validation */}
-                <div className="rounded-lg border p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div><Label htmlFor="use-location" className="font-semibold">Gunakan Validasi Lokasi</Label><p className="text-sm text-muted-foreground">Wajibkan pengguna di area sekolah untuk absen.</p></div>
-                    <Switch id="use-location" checked={useLocationValidation} onCheckedChange={setUseLocationValidation} disabled={holidayMode} />
+            {/* Location Validation */}
+            <div className="rounded-lg border p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div><Label htmlFor="use-location" className="font-semibold">Gunakan Validasi Lokasi</Label><p className="text-sm text-muted-foreground">Wajibkan pengguna di area sekolah untuk absen.</p></div>
+                <Switch id="use-location" checked={useLocationValidation} onCheckedChange={setUseLocationValidation} disabled={holidayMode} />
+              </div>
+              {useLocationValidation && <div className="space-y-4 pt-4 border-t">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-4"><Label>Koordinat Lokasi Sekolah</Label><Button type="button" variant="outline" size="sm" onClick={handleGetCurrentLocation} disabled={isLocating || holidayMode}>{isLocating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LocateFixed className="mr-2 h-4 w-4" />}Dapatkan Lokasi</Button></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div><Label htmlFor="latitude" className="text-xs text-muted-foreground">Latitude</Label><Input id="latitude" type="text" value={latitude} onChange={(e) => setLatitude(e.target.value)} disabled={holidayMode || isLocating} /></div>
+                      <div><Label htmlFor="longitude" className="text-xs text-muted-foreground">Longitude</Label><Input id="longitude" type="text" value={longitude} onChange={(e) => setLongitude(e.target.value)} disabled={holidayMode || isLocating} /></div>
+                    </div>
                   </div>
-                  {useLocationValidation && <div className="space-y-4 pt-4 border-t">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-4"><Label>Koordinat Lokasi Sekolah</Label><Button type="button" variant="outline" size="sm" onClick={handleGetCurrentLocation} disabled={isLocating || holidayMode}>{isLocating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LocateFixed className="mr-2 h-4 w-4" />}Dapatkan Lokasi</Button></div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div><Label htmlFor="latitude" className="text-xs text-muted-foreground">Latitude</Label><Input id="latitude" type="text" value={latitude} onChange={(e) => setLatitude(e.target.value)} disabled={holidayMode || isLocating} /></div>
-                          <div><Label htmlFor="longitude" className="text-xs text-muted-foreground">Longitude</Label><Input id="longitude" type="text" value={longitude} onChange={(e) => setLongitude(e.target.value)} disabled={holidayMode || isLocating} /></div>
-                        </div>
-                      </div>
-                      <div className="space-y-2"><Label htmlFor="radius">Radius Sekolah (meter)</Label><Input id="radius" type="number" value={radius} onChange={(e) => setRadius(Number(e.target.value))} disabled={holidayMode} /><p className="text-sm text-muted-foreground">Jarak toleransi maksimal dari titik pusat sekolah.</p></div>
-                      <div className="space-y-2"><Label>Pratinjau Lokasi di Peta</Label><div className="aspect-video w-full overflow-hidden rounded-lg border"><iframe key={`${latitude}-${longitude}`} width="100%" height="100%" loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" src={`https://maps.google.com/maps?q=${latitude},${longitude}&hl=id&z=15&output=embed`} title="Pratinjau Peta"></iframe></div></div>
-                  </div>}
+                  <div className="space-y-2"><Label htmlFor="radius">Radius Sekolah (meter)</Label><Input id="radius" type="number" value={radius} onChange={(e) => setRadius(Number(e.target.value))} disabled={holidayMode} /><p className="text-sm text-muted-foreground">Jarak toleransi maksimal dari titik pusat sekolah.</p></div>
+                  <div className="space-y-2"><Label>Pratinjau Lokasi di Peta</Label><div className="aspect-video w-full overflow-hidden rounded-lg border"><iframe key={`${latitude}-${longitude}`} width="100%" height="100%" loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" src={`https://maps.google.com/maps?q=${latitude},${longitude}&hl=id&z=15&output=embed`} title="Pratinjau Peta"></iframe></div></div>
+              </div>}
+            </div>
+            
+            {/* Time Validation */}
+            <div className="rounded-lg border p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                    <div><Label htmlFor="use-time" className="font-semibold">Gunakan Validasi Jam Kerja</Label><p className="text-sm text-muted-foreground">Wajibkan absensi di dalam jam kerja yang ditentukan.</p></div>
+                    <Switch id="use-time" checked={useTimeValidation} onCheckedChange={setUseTimeValidation} disabled={holidayMode} />
                 </div>
-                
-                {/* Time Validation */}
-                <div className="rounded-lg border p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <div><Label htmlFor="use-time" className="font-semibold">Gunakan Validasi Jam Kerja</Label><p className="text-sm text-muted-foreground">Wajibkan absensi di dalam jam kerja yang ditentukan.</p></div>
-                        <Switch id="use-time" checked={useTimeValidation} onCheckedChange={setUseTimeValidation} disabled={holidayMode} />
+                {useTimeValidation && <div className="space-y-6 pt-4 border-t">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2"><Label htmlFor="checkin-start">Jam Mulai Masuk</Label><Input id="checkin-start" type="time" value={checkInStart} onChange={e => setCheckInStart(e.target.value)} disabled={holidayMode} /></div>
+                        <div className="space-y-2"><Label htmlFor="checkin-end">Jam Selesai Masuk</Label><Input id="checkin-end" type="time" value={checkInEnd} onChange={e => setCheckInEnd(e.target.value)} disabled={holidayMode} /></div>
                     </div>
-                    {useTimeValidation && <div className="space-y-6 pt-4 border-t">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="space-y-2"><Label htmlFor="checkin-start">Jam Mulai Masuk</Label><Input id="checkin-start" type="time" value={checkInStart} onChange={e => setCheckInStart(e.target.value)} disabled={holidayMode} /></div>
-                            <div className="space-y-2"><Label htmlFor="checkin-end">Jam Selesai Masuk</Label><Input id="checkin-end" type="time" value={checkInEnd} onChange={e => setCheckInEnd(e.target.value)} disabled={holidayMode} /></div>
-                        </div>
-                        <div className="space-y-4">
-                            <div><Label>Jam Pulang (Spesifik per Hari)</Label><p className="text-sm text-muted-foreground">Atur rentang waktu absensi pulang untuk tiap hari kerja.</p></div>
-                            <div className="space-y-3 rounded-md border p-3">
-                                {daysOfWeek.filter(d => d.value !== 0).map(day => (
-                                    <div key={day.value} className="grid grid-cols-1 sm:grid-cols-5 items-center gap-2">
-                                        <Label htmlFor={`checkout-start-${day.value}`} className="sm:col-span-2 text-sm font-normal">{day.label}</Label>
-                                        <div className="sm:col-span-3 grid grid-cols-2 gap-2">
-                                            <Input id={`checkout-start-${day.value}`} type="time" value={checkOutTimes[day.value as keyof typeof checkOutTimes]?.start || ''} onChange={e => handleTimeChange(day.value, 'start', e.target.value)} disabled={holidayMode} />
-                                            <Input id={`checkout-end-${day.value}`} type="time" value={checkOutTimes[day.value as keyof typeof checkOutTimes]?.end || ''} onChange={e => handleTimeChange(day.value, 'end', e.target.value)} disabled={holidayMode} />
-                                        </div>
+                    <div className="space-y-4">
+                        <div><Label>Jam Pulang (Spesifik per Hari)</Label><p className="text-sm text-muted-foreground">Atur rentang waktu absensi pulang untuk tiap hari kerja.</p></div>
+                        <div className="space-y-3 rounded-md border p-3">
+                            {daysOfWeek.filter(d => d.value !== 0).map(day => (
+                                <div key={day.value} className="grid grid-cols-1 sm:grid-cols-5 items-center gap-2">
+                                    <Label htmlFor={`checkout-start-${day.value}`} className="sm:col-span-2 text-sm font-normal">{day.label}</Label>
+                                    <div className="sm:col-span-3 grid grid-cols-2 gap-2">
+                                        <Input id={`checkout-start-${day.value}`} type="time" value={checkOutTimes[day.value as keyof typeof checkOutTimes]?.start || ''} onChange={e => handleTimeChange(day.value, 'start', e.target.value)} disabled={holidayMode} />
+                                        <Input id={`checkout-end-${day.value}`} type="time" value={checkOutTimes[day.value as keyof typeof checkOutTimes]?.end || ''} onChange={e => handleTimeChange(day.value, 'end', e.target.value)} disabled={holidayMode} />
                                     </div>
-                                ))}
-                            </div>
+                                </div>
+                            ))}
                         </div>
-                    </div>}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Report Customization */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader><CardTitle>Kustomisasi Label Laporan</CardTitle><CardDescription>Ubah teks yang ditampilkan pada laporan absensi. Ini tidak akan mengubah logika.</CardDescription></CardHeader>
-              <CardContent className="space-y-4">
-                {Object.keys(reportLabels).map((key) => (
-                    <div key={key} className="grid grid-cols-3 items-center gap-4">
-                        <Label htmlFor={`label-${key}`} className="text-muted-foreground">{statusKeyToLabelMap[key] || key}</Label>
-                        <Input id={`label-${key}`} value={reportLabels[key as keyof typeof reportLabels]} onChange={(e) => handleLabelChange(key as keyof typeof reportLabels, e.target.value)} className="col-span-2" />
                     </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
+                </div>}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Report Customization */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle>Kustomisasi Label Laporan</CardTitle><CardDescription>Ubah teks yang ditampilkan pada laporan absensi. Ini tidak akan mengubah logika.</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            {Object.keys(reportLabels).map((key) => (
+                <div key={key} className="grid grid-cols-3 items-center gap-4">
+                    <Label htmlFor={`label-${key}`} className="text-muted-foreground">{statusKeyToLabelMap[key] || key}</Label>
+                    <Input id={`label-${key}`} value={reportLabels[key as keyof typeof reportLabels]} onChange={(e) => handleLabelChange(key as keyof typeof reportLabels, e.target.value)} className="col-span-2" />
+                </div>
+            ))}
+          </CardContent>
+        </Card>
+        <Card>
+            <CardHeader>
                 <CardTitle>Konfigurasi Bobot Kehadiran</CardTitle>
                 <CardDescription>Tentukan nilai (poin) untuk setiap status kehadiran yang akan digunakan untuk menghitung skor akhir.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                  {Object.keys(attendanceWeights).map((key) => (
-                      <div key={key} className="grid grid-cols-3 items-center gap-4">
-                          <Label htmlFor={`weight-${key}`} className="text-muted-foreground flex items-center">
-                              {statusKeyToLabelMap[key] || key}
-                              <Tooltip>
-                                  <TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-2 text-muted-foreground/50 cursor-help" /></TooltipTrigger>
-                                  <TooltipContent><p>{`Bobot nilai untuk status ${statusKeyToLabelMap[key] || key}`}</p></TooltipContent>
-                              </Tooltip>
-                          </Label>
-                          <Input id={`weight-${key}`} type="number" step="0.05" value={attendanceWeights[key as keyof typeof attendanceWeights]} onChange={(e) => handleWeightChange(key as keyof typeof attendanceWeights, e.target.value)} className="col-span-2" />
-                      </div>
-                  ))}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Monthly Holiday Settings */}
-          {schoolConfigData && <MonthlyConfigCalendar user={user} schoolConfig={schoolConfigData} onHolidaysChange={handleMonthlyHolidaysChange} />}
-        </div>
-      </TooltipProvider>
-
-      {/* --- Mobile: Sticky Footer --- */}
-      <div className="md:hidden fixed bottom-20 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t p-4">
-        <Button size="lg" className="w-full" onClick={handleSave} disabled={isSaving}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Semua Pengaturan
-        </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                {Object.keys(attendanceWeights).map((key) => (
+                    <div key={key} className="grid grid-cols-3 items-center gap-4">
+                        <Label htmlFor={`weight-${key}`} className="text-muted-foreground flex items-center">
+                            {statusKeyToLabelMap[key] || key}
+                            <Tooltip>
+                                <TooltipTrigger asChild><HelpCircle className="h-4 w-4 ml-2 text-muted-foreground/50 cursor-help" /></TooltipTrigger>
+                                <TooltipContent><p>{`Bobot nilai untuk status ${statusKeyToLabelMap[key] || key}`}</p></TooltipContent>
+                            </Tooltip>
+                        </Label>
+                        <Input id={`weight-${key}`} type="number" step="0.05" value={attendanceWeights[key as keyof typeof attendanceWeights]} onChange={(e) => handleWeightChange(key as keyof typeof attendanceWeights, e.target.value)} className="col-span-2" />
+                    </div>
+                ))}
+            </CardContent>
+        </Card>
       </div>
 
-      {/* --- Desktop: Floating Button --- */}
-      <div className="hidden md:block fixed bottom-6 right-6 z-50">
-        <Button size="lg" onClick={handleSave} disabled={isSaving}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Semua Pengaturan
-        </Button>
+      {/* Monthly Holiday Settings */}
+      {schoolConfigData && <MonthlyConfigCalendar user={user} schoolConfig={schoolConfigData} onHolidaysChange={handleMonthlyHolidaysChange} />}
+
+      {/* Save Button Wrapper */}
+      <div className="fixed bottom-6 right-6 z-50">
+          <Button size="lg" onClick={handleSave} disabled={isSaving}>
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Semua Pengaturan
+          </Button>
       </div>
-    </>
+    </div>
+    </TooltipProvider>
   );
 }
