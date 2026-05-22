@@ -45,8 +45,13 @@ const defaultCheckOutTimes = {
 };
 
 const defaultReportLabels = {
-    present: 'Hadir Penuh', late: 'Terlambat', absent: 'Alpa', permission: 'Izin/Sakit', official_duty: 'Dinas',
-    full_day: 'Hadir Penuh', no_check_in: 'Tidak Absen Masuk', no_check_out: 'Tidak Absen Pulang',
+    present: 'Hadir Penuh', 
+    late: 'Terlambat', 
+    absent: 'Alpa', 
+    permission: 'Izin/Sakit', 
+    official_duty: 'Dinas',
+    no_check_in: 'Tidak Absen Masuk', 
+    no_check_out: 'Tidak Absen Pulang',
 };
 
 const defaultAttendanceWeights = {
@@ -65,7 +70,6 @@ const statusKeyToLabelMap: { [key: string]: string } = {
     absent: 'Alpa',
     permission: 'Izin',
     official_duty: 'Izin Dinas',
-    full_day: 'Hadir Penuh',
     no_check_in: 'Hanya Absen Pulang (Tanpa Masuk)',
     no_check_out: 'Hanya Absen Masuk (Tanpa Pulang)',
 };
@@ -215,8 +219,13 @@ export default function KonfigurasiAbsenPage() {
       if (schoolConfigData.qrCodeValue) setQrCodeValue(schoolConfigData.qrCodeValue);
       
       // Report Labels & Weights
-      setReportLabels(prev => ({ ...defaultReportLabels, ...schoolConfigData.reportLabels }));
-      setAttendanceWeights(prev => ({ ...defaultAttendanceWeights, ...schoolConfigData.attendanceWeights }));
+      const mergedLabels = { ...defaultReportLabels, ...schoolConfigData.reportLabels };
+      delete mergedLabels.full_day; // Remove the duplicate/legacy key
+      setReportLabels(mergedLabels);
+
+      const mergedWeights = { ...defaultAttendanceWeights, ...schoolConfigData.attendanceWeights };
+      delete mergedWeights.full_day; // Also clean the weights just in case
+      setAttendanceWeights(mergedWeights);
     }
   }, [schoolConfigData]);
 

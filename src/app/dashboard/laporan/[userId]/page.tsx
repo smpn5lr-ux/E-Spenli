@@ -1,34 +1,134 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { format, startOfMonth, isValid, parseISO } from 'date-fns';
+import { doc, getDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { format, isSameMonth, addMonths, subMonths, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { fetchUserMonthlyReportData, MonthlyReportData } from '@/lib/attendance';
-import { Download, ChevronLeft, ChevronRight, AlertCircle, ArrowLeft } from 'lucide-react';
+import { fetchUserMonthlyReportData, MonthlyReportData, CoreStatus } from '@/lib/attendance';
+import { Download, ChevronLeft, ChevronRight, AlertCircle, ArrowLeft, Loader2, Edit } from 'lucide-react';
 import { PageWrapper } from '@/components/layout/page-wrapper';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
 
-// Helper to safely format dates that might be Timestamps or ISO strings
-const safeFormat = (dateInput: any, formatString: string): string => {
-    if (!dateInput) return '-';
-    let date: Date;
-    if (typeof dateInput === 'string') {
-        date = parseISO(dateInput);
-    } else if (dateInput.toDate) { // Handle Firebase Timestamp
-        date = dateInput.toDate();
-    } else {
-        date = new Date(dateInput);
+// --- REFACTORED COMPONENT: AdminCorrectionDialog ---
+
+interface AdminCorrectionDialogProps {
+  record: MonthlyReportData;
+  userId: string;
+  onCorrectionComplete: () => void;
+}
+
+function AdminCorrectionDialog({ record, userId, onCorrectionComplete }: AdminCorrectionDialogProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [keterangan, setKeterangan] = useState(record.keterangan || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const firestore = useFirestore();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    // Update state if the record changes
+    setKeterangan(record.keterangan || '');
+  }, [record]);
+
+  const handleSaveCorrection = async () => {
+    if (!firestore || !keterangan.trim()) {
+        toast({ variant: "destructive", title: "Keterangan tidak boleh kosong." });
+        return;
     }
-    return isValid(date) ? format(date, formatString, { locale: id }) : '-';
-};
+    setIsSaving(true);
 
+    try {
+        const batch = writeBatch(firestore);
+        const dateStr = format(parseISO(record.date), 'yyyy-MM-dd');
+        const attendanceRef = doc(firestore, 'users', userId, 'attendanceRecords', dateStr); // Use date for ID to ensure one record per day
+
+        // Data to set/update. It will create a new record if one doesn't exist for the day.
+        const correctionData = {
+            date: dateStr,
+            description: keterangan, // The admin's custom text
+            adminEdited: true,       // The crucial flag
+            updatedAt: serverTimestamp(), // Track when the edit happened
+        };
+
+        batch.set(attendanceRef, correctionData, { merge: true });
+
+        // If this day had a leave request, we should probably cancel it to avoid conflicts.
+        if (record.isCancellable) {
+            const leaveRef = doc(firestore, 'users', userId, 'leaveRequests', record.id);
+            batch.delete(leaveRef);
+        }
+
+        await batch.commit();
+        toast({ title: "Koreksi Berhasil", description: `Keterangan telah diperbarui menjadi: "${keterangan}"` });
+        onCorrectionComplete(); // Refresh the report data
+        setIsOpen(false);
+    } catch (error: any) {
+        console.error("Correction failed:", error);
+        toast({ variant: "destructive", title: "Gagal Menyimpan Koreksi", description: error.message });
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm"><Edit className="h-4 w-4" /></Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Perbaiki Keterangan</DialogTitle>
+          <DialogDescription>
+            Ubah keterangan untuk tanggal {format(parseISO(record.date), 'd MMMM yyyy', { locale: id })}. Teks ini akan ditampilkan apa adanya di laporan.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4 grid gap-4">
+            <div className="grid gap-2">
+                <Label htmlFor="keterangan">Tulis Keterangan Baru</Label>
+                <Input 
+                    id="keterangan"
+                    value={keterangan}
+                    onChange={(e) => setKeterangan(e.target.value)}
+                    placeholder="Contoh: Hadir (Lupa Absen Pulang)"
+                />
+            </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setIsOpen(false)} disabled={isSaving}>Batal</Button>
+          <Button onClick={handleSaveCorrection} disabled={!keterangan.trim() || isSaving}>
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Simpan Perubahan
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// --- COMPONENT: UserReportDetailPage (Main - Largely Unchanged) ---
+
+const coreStatusToVariant: { [key in CoreStatus]: 'default' | 'destructive' | 'secondary' } = {
+    'Hadir': 'default',
+    'Alpa': 'destructive',
+    'Izin': 'secondary',
+};
 
 export default function UserReportDetailPage() {
     const params = useParams();
@@ -46,147 +146,103 @@ export default function UserReportDetailPage() {
     const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
     const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc(currentUser, schoolConfigRef);
 
-    useEffect(() => {
+    const fetchReport = async () => {
         if (!firestore || !userId || !schoolConfigData || !currentUser) return;
         
-        // Security check is handled in the render section. This effect will only run for authorized users.
-
-        const fetchData = async () => {
-            setIsLoading(true);
-            setError(null);
-            try {
-                // Authorization check: ensure user can only access their own report or if they are an admin/headmaster
-                if (currentUser.role !== 'admin' && currentUser.role !== 'kepala_sekolah' && currentUser.uid !== userId) {
-                     throw new Error('Anda tidak memiliki izin untuk melihat laporan ini.');
-                }
-
-                const userRef = doc(firestore, 'users', userId);
-                const userSnap = await getDoc(userRef);
-                if (!userSnap.exists()) {
-                    throw new Error('Pengguna tidak ditemukan.');
-                }
-                setUserData(userSnap.data());
-
-                const reportData = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfigData, {});
-                setMonthlyReportData(reportData);
-
-            } catch (err: any) {
-                console.error("Error fetching user report detail:", err);
-                setError(err.message || 'Gagal memuat data laporan pengguna.');
-            } finally {
-                setIsLoading(false);
+        setIsLoading(true);
+        setError(null);
+        try {
+            if (currentUser.role !== 'admin' && currentUser.role !== 'kepala_sekolah') {
+                 throw new Error('Anda tidak memiliki izin untuk melihat laporan ini.');
             }
-        };
 
-        fetchData();
+            const userRef = doc(firestore, 'users', userId);
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists()) throw new Error('Pengguna tidak ditemukan.');
+            setUserData(userSnap.data());
+
+            const reportData = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfigData, {});
+            setMonthlyReportData(reportData);
+
+        } catch (err: any) {
+            console.error("Error fetching user report detail:", err);
+            setError(err.message || 'Gagal memuat data laporan pengguna.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchReport();
     }, [firestore, userId, currentMonth, schoolConfigData, currentUser]);
 
-    const changeMonth = (amount: number) => {
-        setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + amount, 1));
-    };
 
     const handleDownloadPdf = async () => {
         if (!userData || monthlyReportData.length === 0) return;
 
-        // Dynamically import libraries only on the client-side
         const { default: jsPDF } = await import('jspdf');
         const { default: autoTable } = await import('jspdf-autotable');
 
-        const doc = new jsPDF();
+        const docPDF = new jsPDF();
         const monthName = format(currentMonth, 'MMMM yyyy', { locale: id });
 
-        // Title
-        doc.setFontSize(18);
-        doc.text(`Laporan Kehadiran`, 14, 22);
-        doc.setFontSize(11);
-        doc.text(`Nama: ${userData.name}`, 14, 30);
-        doc.text(`Periode: ${monthName}`, 14, 36);
+        docPDF.setFontSize(18);
+        docPDF.text(`Laporan Kehadiran`, 14, 22);
+        docPDF.setFontSize(11);
+        docPDF.text(`Nama: ${userData.name}`, 14, 30);
+        docPDF.text(`Periode: ${monthName}`, 14, 36);
 
-        // Table
-        autoTable(doc, {
+        autoTable(docPDF, {
             startY: 40,
             head: [['No', 'Tanggal', 'Jam Masuk', 'Jam Pulang', 'Status', 'Keterangan']],
             body: monthlyReportData.map((item, index) => [
                 index + 1,
-                safeFormat(item.date, 'eeee, dd/MM/yy'),
-                safeFormat(item.checkInTime, 'HH:mm:ss'),
-                safeFormat(item.checkOutTime, 'HH:mm:ss'),
+                format(parseISO(item.date), 'eeee, dd/MM/yy', { locale: id }),
+                item.checkInTime ? format(parseISO(item.checkInTime), 'HH:mm:ss') : '-',
+                item.checkOutTime ? format(parseISO(item.checkOutTime), 'HH:mm:ss') : '-',
                 item.status,
-                item.description
+                item.keterangan
             ]),
             theme: 'grid',
             styles: { fontSize: 8 },
-            headStyles: { fillColor: [22, 160, 133], textColor: 255 },
+            headStyles: { fillColor: [41, 128, 185], textColor: 255 },
         });
 
-        doc.save(`laporan_${userData.name.replace(/\s/g, '_')}_${monthName.replace(/\s/g, '_')}.pdf`);
+        docPDF.save(`laporan_${userData.name.replace(/\s/g, '_')}_${monthName.replace(/\s/g, '_')}.pdf`);
     };
 
     const pageIsLoading = isLoading || isUserLoading || isConfigLoading;
+    const isAdmin = currentUser?.role === 'admin';
 
-    // Authorization check
-    if (!isUserLoading && currentUser && currentUser.role !== 'admin' && currentUser.role !== 'kepala_sekolah' && currentUser.uid !== userId) {
-        return (
-             <PageWrapper>
-                <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Akses Ditolak</AlertTitle>
-                    <AlertDescription>Anda tidak memiliki izin untuk melihat halaman ini.</AlertDescription>
-                </Alert>
-            </PageWrapper>
-        );
-    }
-
-    if (pageIsLoading) {
-        return (
-            <PageWrapper>
-                <Card>
-                    <CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader>
-                    <CardContent className="space-y-2">
-                        <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-48 w-full" />
-                    </CardContent>
-                </Card>
-            </PageWrapper>
-        );
-    }
-    
-    if (error) {
-        return (
-             <PageWrapper>
-                <Alert variant="destructive">
-                    <AlertTitle>Terjadi Kesalahan</AlertTitle>
-                    <AlertDescription>{error}</AlertDescription>
-                </Alert>
-            </PageWrapper>
-        );
+    if (!isUserLoading && currentUser?.role === 'guru' || currentUser?.role === 'pegawai') {
+         router.replace('/dashboard/laporan');
+         return null;
     }
 
     return (
         <PageWrapper>
             <div className="mb-4">
-                <Button variant="ghost" onClick={() => router.push('/dashboard/laporan-sekolah')}>
+                <Button variant="ghost" onClick={() => router.back()}>
                     <ArrowLeft className="mr-2 h-4 w-4" />
-                    Kembali ke Laporan Sekolah
+                    Kembali
                 </Button>
             </div>
             <Card>
                 <CardHeader>
-                    <CardTitle>Detail Laporan Kehadiran</CardTitle>
-                    <CardDescription>Laporan kehadiran harian untuk <span className='font-semibold'>{userData?.name || 'Pengguna'}</span>.</CardDescription>
+                    {userData ? (
+                        <><CardTitle>Detail Laporan Kehadiran</CardTitle><CardDescription>Laporan kehadiran untuk <span className='font-semibold'>{userData.name}</span>.</CardDescription></>
+                    ) : (
+                        <><Skeleton className="h-7 w-3/5 rounded-md" /><Skeleton className="h-4 w-4/5 rounded-md mt-1" /></>
+                    )}
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
                         <div className="flex items-center gap-2">
-                            <Button variant="outline" size="icon" onClick={() => changeMonth(-1)} disabled={currentMonth.getFullYear() === 2026 && currentMonth.getMonth() === 0}>
-                                <ChevronLeft className="h-4 w-4" />
-                            </Button>
-                            <span className="w-36 text-center font-semibold">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
-                            <Button variant="outline" size="icon" onClick={() => changeMonth(1)} disabled={currentMonth.getMonth() === new Date().getMonth() && currentMonth.getFullYear() === new Date().getFullYear()}>
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
+                            <Button variant="outline" size="icon" onClick={() => setCurrentMonth(prev => subMonths(prev, 1))}><ChevronLeft className="h-4 w-4" /></Button>
+                            <span className="w-36 text-center font-semibold capitalize">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
+                            <Button variant="outline" size="icon" onClick={() => setCurrentMonth(prev => addMonths(prev, 1))} disabled={isSameMonth(currentMonth, new Date())}><ChevronRight className="h-4 w-4" /></Button>
                         </div>
-                        <Button onClick={handleDownloadPdf} disabled={monthlyReportData.length === 0}>
+                        <Button onClick={handleDownloadPdf} disabled={monthlyReportData.length === 0 || pageIsLoading}>
                             <Download className="mr-2 h-4 w-4" />
                             Unduh Laporan PDF
                         </Button>
@@ -201,32 +257,38 @@ export default function UserReportDetailPage() {
                                     <TableHead className="w-[15%]">Jam Pulang</TableHead>
                                     <TableHead className="w-[15%]">Status</TableHead>
                                     <TableHead>Keterangan</TableHead>
+                                    {isAdmin && <TableHead className="w-[10%] text-center">Aksi</TableHead>}
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {monthlyReportData.length > 0 ? (
+                                {pageIsLoading ? (
+                                     <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="h-64 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /><p className="mt-2">Memuat data laporan...</p></TableCell></TableRow>
+                                ) : error ? (
+                                    <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="h-24 text-center text-red-600">{error}</TableCell></TableRow>
+                                ) : monthlyReportData.length > 0 ? (
                                     monthlyReportData.map((item, index) => (
-                                        <TableRow key={item.id} className={item.status === 'Alpa' ? 'bg-red-50/50' : item.status === 'Libur' ? 'bg-gray-50/50' : ''}>
+                                        <TableRow key={item.id}>
                                             <TableCell className='text-center'>{index + 1}</TableCell>
-                                            <TableCell>{safeFormat(item.date, 'eeee, dd MMMM yyyy')}</TableCell>
-                                            <TableCell className='text-center'>{safeFormat(item.checkInTime, 'HH:mm:ss')}</TableCell>
-                                            <TableCell className='text-center'>{safeFormat(item.checkOutTime, 'HH:mm:ss')}</TableCell>
+                                            <TableCell>{format(parseISO(item.date), 'eeee, dd MMMM yyyy', { locale: id })}</TableCell>
+                                            <TableCell className='text-center'>{item.checkInTime ? format(parseISO(item.checkInTime), 'HH:mm') : '-'}</TableCell>
+                                            <TableCell className='text-center'>{item.checkOutTime ? format(parseISO(item.checkOutTime), 'HH:mm') : '-'}</TableCell>
                                             <TableCell>
-                                                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${ item.status === 'Hadir' ? 'bg-green-100 text-green-800' : item.status === 'Alpa' ? 'bg-red-100 text-red-800' : item.status === 'Sakit' || item.status === 'Izin' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800' }`}>
+                                                <Badge variant={coreStatusToVariant[item.status] || 'default'}>
                                                     {item.status}
-                                                </span>
+                                                </Badge>
                                             </TableCell>
-                                            <TableCell>{item.description}</TableCell>
+                                            <TableCell>{item.keterangan}</TableCell>
+                                            {isAdmin && (
+                                                <TableCell className="text-center">
+                                                   <AdminCorrectionDialog record={item} userId={userId} onCorrectionComplete={fetchReport} />
+                                                </TableCell>
+                                            )}
                                         </TableRow>
                                     ))
                                 ) : (
-                                    <TableRow>
-                                        <TableCell colSpan={6} className="h-24 text-center">
-                                            Tidak ada data kehadiran untuk ditampilkan pada periode ini.
-                                        </TableCell>
-                                    </TableRow>
+                                    <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="h-24 text-center">Tidak ada data untuk ditampilkan.</TableCell></TableRow>
                                 )}
-                            </TableBody>
+                            </Body>
                         </Table>
                     </div>
                 </CardContent>
