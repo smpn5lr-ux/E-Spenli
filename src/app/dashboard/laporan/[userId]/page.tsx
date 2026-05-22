@@ -27,19 +27,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 
-// --- UTILITY: Random Time Generation ---
 function generateRandomTime(baseDate: Date, start: string, end: string): Date {
     const [startHours, startMinutes] = start.split(':').map(Number);
     const [endHours, endMinutes] = end.split(':').map(Number);
-
     const startDate = setSeconds(setMinutes(setHours(baseDate, startHours), startMinutes), 0);
     const endDate = setSeconds(setMinutes(setHours(baseDate, endHours), endMinutes), 0);
-
     const randomTimestamp = startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime());
     return new Date(randomTimestamp);
 }
-
-// --- COMPONENT: AdminCorrectionDialog (CORRECTED LOGIC) ---
 
 interface AdminCorrectionDialogProps {
   record: MonthlyReportData;
@@ -56,8 +51,10 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
   const { toast } = useToast();
 
   useEffect(() => {
-    setKeterangan(record.keterangan || '');
-  }, [record]);
+    if(isOpen) {
+      setKeterangan(record.keterangan || '');
+    }
+  }, [isOpen, record]);
 
   const handleSaveCorrection = async () => {
     if (!firestore || !keterangan.trim()) {
@@ -72,6 +69,10 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
         const dateStr = format(recordDate, 'yyyy-MM-dd');
         const attendanceRef = doc(firestore, 'users', userId, 'attendanceRecords', dateStr);
 
+        // More robust approach: Fetch the latest document state before writing
+        const docSnap = await getDoc(attendanceRef);
+        const existingData = docSnap.data();
+
         const correctionData: any = {
             date: dateStr,
             description: keterangan,
@@ -79,14 +80,15 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
             updatedAt: serverTimestamp(),
         };
 
-        // **THE FIX**: Check for checkInTime and checkOutTime separately.
-        if (!record.checkInTime) {
+        // Generate check-in time ONLY if it doesn't exist in the database record
+        if (!existingData?.checkInTime) {
             const checkInStart = schoolConfig?.checkInTime?.start || '06:00';
             const checkInEnd = schoolConfig?.checkInTime?.end || '07:30';
             correctionData.checkInTime = Timestamp.fromDate(generateRandomTime(recordDate, checkInStart, checkInEnd));
         }
 
-        if (!record.checkOutTime) {
+        // Generate check-out time ONLY if it doesn't exist in the database record
+        if (!existingData?.checkOutTime) {
             const checkOutStart = schoolConfig?.checkOutTime?.start || '14:00';
             const checkOutEnd = schoolConfig?.checkOutTime?.end || '17:00';
             correctionData.checkOutTime = Timestamp.fromDate(generateRandomTime(recordDate, checkOutStart, checkOutEnd));
@@ -94,14 +96,15 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
 
         batch.set(attendanceRef, correctionData, { merge: true });
 
+        // If this correction is for a pending leave request, delete the request
         if (record.isCancellable) {
             const leaveRef = doc(firestore, 'users', userId, 'leaveRequests', record.id);
             batch.delete(leaveRef);
         }
 
         await batch.commit();
-        toast({ title: "Koreksi Berhasil", description: `Keterangan telah diperbarui menjadi: "${keterangan}"` });
-        onCorrectionComplete();
+        toast({ title: "Koreksi Berhasil", description: `Kehadiran untuk tanggal ${format(recordDate, 'dd/MM/yyyy')} telah diperbaiki.` });
+        onCorrectionComplete(); // Refetch the report data
         setIsOpen(false);
     } catch (error: any) {
         console.error("Correction failed:", error);
@@ -118,9 +121,10 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Perbaiki Keterangan</DialogTitle>
+          <DialogTitle>Perbaiki Status Kehadiran</DialogTitle>
           <DialogDescription>
-            Ubah keterangan untuk tanggal {format(parseISO(record.date), 'd MMMM yyyy', { locale: id })}. Jika jam kosong, sistem akan mengisinya secara otomatis.
+            Anda akan memperbaiki status untuk tanggal {format(parseISO(record.date), 'd MMMM yyyy', { locale: id })}. 
+            Jika jam masuk atau pulang kosong, sistem akan mengisinya secara otomatis.
           </DialogDescription>
         </DialogHeader>
         <div className="py-4 grid gap-4">
@@ -144,8 +148,6 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
     </Dialog>
   );
 }
-
-// --- COMPONENT: UserReportDetailPage ---
 
 const coreStatusToVariant: { [key in CoreStatus]: 'default' | 'destructive' | 'secondary' } = {
     'Hadir': 'default',
@@ -199,15 +201,13 @@ export default function UserReportDetailPage() {
         fetchReport();
     }, [firestore, userId, currentMonth, schoolConfigData, currentUser]);
 
-    const handleDownloadPdf = async () => {
-      // PDF generation logic remains the same
-    };
+    const handleDownloadPdf = async () => { /* PDF generation logic */ };
 
     const pageIsLoading = isLoading || isUserLoading || isConfigLoading;
     const isAdmin = currentUser?.role === 'admin';
 
-    if (!isUserLoading && currentUser?.role === 'guru' || currentUser?.role === 'pegawai') {
-         router.replace('/dashboard/laporan');
+    if (!isUserLoading && currentUser?.role !== 'admin' && currentUser?.role !== 'kepala_sekolah') {
+         router.replace('/dashboard');
          return null;
     }
 
@@ -216,16 +216,16 @@ export default function UserReportDetailPage() {
             <div className="mb-4">
                 <Button variant="ghost" onClick={() => router.back()}>
                     <ArrowLeft className="mr-2 h-4 w-4" />
-                    Kembali
+                    Kembali ke Laporan Sekolah
                 </Button>
             </div>
             <Card>
                 <CardHeader>
                     {userData ? (
                         <><CardTitle>Detail Laporan Kehadiran</CardTitle><CardDescription>Laporan kehadiran untuk <span className='font-semibold'>{userData.name}</span>.</CardDescription></>
-                    ) : (
+                    ) : pageIsLoading ? (
                         <><Skeleton className="h-7 w-3/5 rounded-md" /><Skeleton className="h-4 w-4/5 rounded-md mt-1" /></>
-                    )}
+                    ) : null}
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
@@ -278,7 +278,7 @@ export default function UserReportDetailPage() {
                                         </TableRow>
                                     ))
                                 ) : (
-                                    <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="h-24 text-center">Tidak ada data untuk ditampilkan.</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="h-24 text-center">Tidak ada data untuk bulan ini.</TableCell></TableRow>
                                 )}
                             </TableBody>
                         </Table>
