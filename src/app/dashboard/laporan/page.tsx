@@ -35,7 +35,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 
 // --- Types and Constants ---
 const statusVariant: { [key: string]: 'default' | 'secondary' | 'destructive' | 'outline' } = {
@@ -60,7 +60,6 @@ interface ReportItem {
   checkOut: string;
   status: string;
   description: string;
-  // This field will indicate if the item is a leave request that can be cancelled.
   isCancellable?: boolean;
 }
 
@@ -73,7 +72,6 @@ export default function LaporanPage() {
   const [monthlyReportData, setMonthlyReportData] = useState<ReportItem[]>([]);
   const [isReportLoading, setIsReportLoading] = useState(true);
   
-  // State for cancellation dialog
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [selectedLeaveId, setSelectedLeaveId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -113,10 +111,9 @@ export default function LaporanPage() {
             dateString: format(parseISO(record.date), 'eee, dd/MM/yy', { locale: id }),
             checkIn: record.checkInTime ? format(parseISO(record.checkInTime), 'HH:mm') : '-',
             checkOut: record.checkOutTime ? format(parseISO(record.checkOutTime), 'HH:mm') : '-',
-            status: record.status, // Expecting 'Menunggu' for pending requests
+            status: record.status,
             description: record.description,
-            // Assume fetchUserMonthlyReportData adds this flag for pending leave requests
-            isCancellable: record.isCancellable || record.status === 'Menunggu', 
+            isCancellable: record.isCancellable || record.status === 'Menunggu',
         }));
 
         setMonthlyReportData(formattedReport);
@@ -139,7 +136,6 @@ export default function LaporanPage() {
       fetchReport(true);
   }, [cacheKey, fetchReport, toast]);
 
-  // --- Cancellation Logic ---
   const openCancelDialog = (leaveId: string) => {
       setSelectedLeaveId(leaveId);
       setIsCancelDialogOpen(true);
@@ -154,7 +150,7 @@ export default function LaporanPage() {
     try {
       await deleteDoc(leaveRequestRef);
       toast({ title: 'Pengajuan Dibatalkan', description: 'Pengajuan izin Anda telah berhasil dibatalkan.' });
-      handleRefresh(); // Refresh the report data
+      handleRefresh();
     } catch (error: any) {
       console.error("Failed to cancel leave request:", error);
       const contextualError = new FirestorePermissionError({ operation: 'delete', path: leaveRequestRef.path });
@@ -167,7 +163,6 @@ export default function LaporanPage() {
     }
   };
 
-  // --- Month Navigation ---
   const handlePrevMonth = () => {
     if (isStaff) {
         toast({ title: 'Akses Terbatas', description: 'Hubungi admin untuk melihat laporan sebelumnya.' });
@@ -182,73 +177,75 @@ export default function LaporanPage() {
 
   const isLoading = isAuthLoading || isConfigLoading || isReportLoading;
 
-  if (isLoading && monthlyReportData.length === 0) {
-    return (
-        <Card>
-            <CardHeader className="p-4 md:p-6"><CardTitle>Riwayat Absensi & Izin</CardTitle><CardDescription>Berikut adalah catatan kehadiran dan pengajuan izin Anda.</CardDescription></CardHeader>
-            <CardContent className="p-4 pt-0 md:p-6 md:pt-0 flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></CardContent>
-        </Card>
-    );
-  }
-  
+  const renderContent = () => (
+    <Card>
+      <CardHeader className="p-4 md:p-6">
+        <CardTitle>Riwayat Absensi & Izin</CardTitle>
+        <CardDescription>Catatan kehadiran dan pengajuan izin Anda. Klik Sinkron untuk data terbaru.</CardDescription>
+      </CardHeader>
+      <CardContent className="p-4 pt-0 md:p-6 md:pt-0 min-h-96">
+        {isLoading && monthlyReportData.length === 0 ? (
+            <div className="flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2 mb-4">
+                <Button variant="outline" size="icon" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+                <span className="font-semibold text-center w-32 capitalize">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
+                <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isSameMonth(currentMonth, new Date())}><ChevronRight className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={handleRefresh} className="ml-auto"><RefreshCw className={`h-4 w-4 ${isReportLoading ? 'animate-spin' : ''}`} /></Button>
+            </div>
+            <div className="border rounded-md overflow-x-auto">
+                <Table className="min-w-[800px]">
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-[50px] text-center">No.</TableHead>
+                            <TableHead className="w-[140px]">Tanggal</TableHead>
+                            <TableHead className="w-[100px] text-center">Jam Masuk</TableHead>
+                            <TableHead className="w-[100px] text-center">Jam Pulang</TableHead>
+                            <TableHead className="w-[120px] text-center">Status</TableHead>
+                            <TableHead>Keterangan</TableHead>
+                            <TableHead className="w-[120px] text-center">Aksi</TableHead> 
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {isReportLoading && monthlyReportData.length > 0 ? (
+                            <TableRow><TableCell colSpan={7} className="h-64 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /><p className="mt-2">Memuat Laporan...</p></TableCell></TableRow>
+                        ) : monthlyReportData.length > 0 ? (
+                            monthlyReportData.map((record, index) => (
+                                <TableRow key={`${record.id}-${index}`}>
+                                    <TableCell className="text-center">{index + 1}</TableCell>
+                                    <TableCell className="font-medium whitespace-nowrap">{record.dateString}</TableCell>
+                                    <TableCell className="text-center">{record.checkIn}</TableCell>
+                                    <TableCell className="text-center">{record.checkOut}</TableCell>
+                                    <TableCell className="text-center whitespace-nowrap"><Badge variant={statusVariant[record.status] || 'default'}>{record.status}</Badge></TableCell>
+                                    <TableCell title={record.description}>{record.description}</TableCell>
+                                    <TableCell className="text-center">
+                                      {record.isCancellable && (
+                                        <Button variant="destructive" size="sm" onClick={() => openCancelDialog(record.id)} disabled={isCancelling}>
+                                          <XCircle className="h-4 w-4 mr-2" />
+                                          Batalkan
+                                        </Button>
+                                      )}
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        ) : (
+                            <TableRow><TableCell colSpan={7} className="h-24 text-center">Tidak ada riwayat untuk bulan ini.</TableCell></TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+
   return (
     <>
-      <Card>
-        <CardHeader className="p-4 md:p-6">
-          <CardTitle>Riwayat Absensi & Izin</CardTitle>
-          <CardDescription>Catatan kehadiran dan pengajuan izin Anda. Klik Sinkron untuk data terbaru.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 pt-0 md:p-6 md:pt-0 min-h-96">
-          <div className="flex items-center gap-2 mb-4">
-              <Button variant="outline" size="icon" onClick={handlePrevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-              <span className="font-semibold text-center w-32 capitalize">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
-              <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isSameMonth(currentMonth, new Date())}><ChevronRight className="h-4 w-4" /></Button>
-              <Button variant="outline" size="icon" onClick={handleRefresh} className="ml-auto"><RefreshCw className={`h-4 w-4 ${isReportLoading ? 'animate-spin' : ''}`} /></Button>
-          </div>
-          <div className="border rounded-md overflow-x-auto">
-              <Table className="min-w-[800px]">
-                  <TableHeader>
-                      <TableRow>
-                          <TableHead className="w-[50px] text-center">No.</TableHead>
-                          <TableHead className="w-[140px]">Tanggal</TableHead>
-                          <TableHead className="w-[100px] text-center">Jam Masuk</TableHead>
-                          <TableHead className="w-[100px] text-center">Jam Pulang</TableHead>
-                          <TableHead className="w-[120px] text-center">Status</TableHead>
-                          <TableHead>Keterangan</TableHead>
-                          <TableHead className="w-[120px] text-center">Aksi</TableHead> 
-                      </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                      {isReportLoading && monthlyReportData.length === 0 ? (
-                          <TableRow><TableCell colSpan={7} className="h-64 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /><p className="mt-2">Memuat Laporan...</p></TableCell></TableRow>
-                      ) : monthlyReportData.length > 0 ? (
-                          monthlyReportData.map((record, index) => (
-                              <TableRow key={`${record.id}-${index}`}>
-                                  <TableCell className="text-center">{index + 1}</TableCell>
-                                  <TableCell className="font-medium whitespace-nowrap">{record.dateString}</TableCell>
-                                  <TableCell className="text-center">{record.checkIn}</TableCell>
-                                  <TableCell className="text-center">{record.checkOut}</TableCell>
-                                  <TableCell className="text-center whitespace-nowrap"><Badge variant={statusVariant[record.status] || 'default'}>{record.status}</Badge></TableCell>
-                                  <TableCell title={record.description}>{record.description}</TableCell>
-                                  <TableCell className="text-center">
-                                    {record.isCancellable && (
-                                      <Button variant="destructive" size="sm" onClick={() => openCancelDialog(record.id)} disabled={isCancelling}>
-                                        <XCircle className="h-4 w-4 mr-2" />
-                                        Batalkan
-                                      </Button>
-                                    )}
-                                  </TableCell>
-                              </TableRow>
-                          ))
-                      ) : (
-                          <TableRow><TableCell colSpan={7} className="h-24 text-center">Tidak ada riwayat untuk bulan ini.</TableCell></TableRow>
-                      )}
-                  </TableBody>
-              </Table>
-          </div>
-        </CardContent>
-      </Card>
-
+      <div className="flex-1 pt-4 pb-24 md:p-8">
+        {renderContent()}
+      </div>
       <AlertDialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

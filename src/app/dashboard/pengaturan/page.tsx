@@ -21,6 +21,8 @@ import { updatePassword, updateProfile } from 'firebase/auth';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import Image from 'next/image';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 
 export default function PengaturanPage() {
   const { user, isUserLoading: isAuthLoading } = useUser();
@@ -53,6 +55,13 @@ export default function PengaturanPage() {
   // State for API Key settings
   const [isApiKeySaving, setIsApiKeySaving] = useState(false);
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  
+  // State for Admin Notification
+  const [isNotificationSaving, setIsNotificationSaving] = useState(false);
+  const [notificationTitle, setNotificationTitle] = useState('');
+  const [notificationMessage, setNotificationMessage] = useState('');
+  const [isNotificationActive, setIsNotificationActive] = useState(false);
+  const [notificationDuration, setNotificationDuration] = useState(10);
 
   // Firestore refs
   const userDocRef = useMemoFirebase(() => {
@@ -83,6 +92,12 @@ export default function PengaturanPage() {
       headmasterNip: string;
       reportCity: string;
       geminiApiKey?: string;
+      adminNotification?: {
+          title: string;
+          message: string;
+          isActive: boolean;
+          duration: number;
+      };
   }>(user, schoolConfigRef);
 
   // Populate state from fetched data
@@ -102,6 +117,12 @@ export default function PengaturanPage() {
       setHeadmasterNip(schoolConfigData.headmasterNip ?? '196805121994121004');
       setReportCity(schoolConfigData.reportCity ?? 'Mando');
       setGeminiApiKey(schoolConfigData.geminiApiKey ?? '');
+      if (schoolConfigData.adminNotification) {
+        setNotificationTitle(schoolConfigData.adminNotification.title ?? '');
+        setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
+        setIsNotificationActive(schoolConfigData.adminNotification.isActive ?? false);
+        setNotificationDuration(schoolConfigData.adminNotification.duration ?? 10);
+      }
     }
   }, [schoolConfigData]);
 
@@ -253,6 +274,45 @@ export default function PengaturanPage() {
     });
     setIsApiKeySaving(false);
   };
+  
+  const handleNotificationSave = () => {
+    if (!schoolConfigRef) return;
+    setIsNotificationSaving(true);
+    
+    if (!notificationTitle.trim() || !notificationMessage.trim()) {
+        toast({
+            variant: 'destructive',
+            title: 'Gagal',
+            description: 'Judul dan isi pemberitahuan tidak boleh kosong.',
+        });
+        setIsNotificationSaving(false);
+        return;
+    }
+    if (notificationDuration <= 0) {
+        toast({
+            variant: 'destructive',
+            title: 'Gagal',
+            description: 'Durasi harus lebih besar dari 0 detik.',
+        });
+        setIsNotificationSaving(false);
+        return;
+    }
+
+    setDocumentNonBlocking(schoolConfigRef, {
+      adminNotification: {
+        title: notificationTitle,
+        message: notificationMessage,
+        isActive: isNotificationActive,
+        duration: notificationDuration,
+      }
+    }, { merge: true });
+    
+    toast({
+      title: 'Pemberitahuan Disimpan',
+      description: 'Pengaturan pemberitahuan untuk pengguna telah berhasil diperbarui.',
+    });
+    setIsNotificationSaving(false);
+  };
 
   const getInitials = (name: string | undefined | null) => {
     if (!name) return 'U';
@@ -399,7 +459,6 @@ export default function PengaturanPage() {
               </CardFooter>
           </Card>
 
-          {/* Added this Card for API Key */}
           <Card>
             <CardHeader>
                 <CardTitle>Pengaturan API</CardTitle>
@@ -420,6 +479,61 @@ export default function PengaturanPage() {
                 </Button>
             </CardFooter>
           </Card>
+
+          <Card>
+            <CardHeader>
+                <CardTitle>Pemberitahuan Admin</CardTitle>
+                <CardDescription>Kirim pengumuman singkat kepada semua pengguna yang akan muncul di halaman beranda.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+                <div className="flex items-center space-x-4 rounded-md border p-4">
+                    <div className="flex-1 space-y-1">
+                        <p className="text-sm font-medium leading-none">Status Pemberitahuan</p>
+                        <p className="text-sm text-muted-foreground">
+                        {isNotificationActive ? "Pengguna akan melihat pesan ini." : "Pesan saat ini disembunyikan dari pengguna."}
+                        </p>
+                    </div>
+                    <Switch
+                        checked={isNotificationActive}
+                        onCheckedChange={setIsNotificationActive}
+                        aria-label="Aktifkan pemberitahuan"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="notification-title">Judul Pesan</Label>
+                    <Input id="notification-title" value={notificationTitle} onChange={e => setNotificationTitle(e.target.value)} placeholder="Contoh: Info Penting" />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="notification-message">Isi Pesan</Label>
+                    <Textarea
+                        id="notification-message"
+                        value={notificationMessage}
+                        onChange={e => setNotificationMessage(e.target.value)}
+                        placeholder="Contoh: Akan ada pemeliharaan sistem malam ini."
+                        className="min-h-[80px]"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="notification-duration">Durasi Tampil (detik)</Label>
+                    <Input
+                        id="notification-duration"
+                        type="number"
+                        value={notificationDuration}
+                        onChange={e => setNotificationDuration(Number(e.target.value))}
+                        placeholder="Contoh: 15"
+                    />
+                </div>
+            </CardContent>
+            <CardFooter className="border-t px-6 py-4">
+                <Button onClick={handleNotificationSave} disabled={isNotificationSaving}>
+                  <span className="flex items-center justify-center">
+                    {isNotificationSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Simpan Pemberitahuan
+                  </span>
+                </Button>
+            </CardFooter>
+          </Card>
+
         </div>
       )}
 

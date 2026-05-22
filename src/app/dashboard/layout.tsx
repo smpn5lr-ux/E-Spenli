@@ -9,6 +9,7 @@ import { SidebarProvider } from '@/components/ui/sidebar';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { DesktopLayout } from '@/components/layout/DesktopLayout';
 import { MobileLayout } from '@/components/layout/MobileLayout';
+import { AdminNotification } from '@/components/layout/AdminNotification';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading } = useUser();
@@ -32,6 +33,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <CacheProvider>
+      <AdminNotification />
       <SidebarProvider>
         {isMobile ? (
           <MobileLayout>{children}</MobileLayout>
