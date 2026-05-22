@@ -476,7 +476,7 @@ export default function KonfigurasiAbsenPage() {
       {schoolConfigData && <MonthlyConfigCalendar user={user} schoolConfig={schoolConfigData} onHolidaysChange={handleMonthlyHolidaysChange} />}
 
       {/* Save Button Wrapper */}
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-20 right-6 z-50 md:bottom-6">
           <Button size="lg" onClick={handleSave} disabled={isSaving}>
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Semua Pengaturan
           </Button>
