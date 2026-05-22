@@ -46,7 +46,7 @@ interface ReportItem extends MonthlyReportData {
   dateString: string;
 }
 
-// --- Main Component (FIXED) ---
+// --- Main Component (ACTION COLUMN REMOVED) ---
 export default function LaporanPage() {
   const { user, isUserLoading: isAuthLoading } = useUser();
   const firestore = useFirestore();
@@ -54,10 +54,6 @@ export default function LaporanPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [monthlyReportData, setMonthlyReportData] = useState<ReportItem[]>([]);
   const [isReportLoading, setIsReportLoading] = useState(true);
-  
-  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
-  const [selectedLeaveId, setSelectedLeaveId] = useState<string | null>(null);
-  const [isCancelling, setIsCancelling] = useState(false);
 
   const schoolConfigRef = useMemo(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
   const { data: schoolConfig, isLoading: isConfigLoading } = useDoc(user, schoolConfigRef);
@@ -71,7 +67,6 @@ export default function LaporanPage() {
     setIsReportLoading(true);
 
     try {
-        // **THE FIX**: Removed the empty object {} to allow the function to fetch holiday config itself.
         const rawReport = await fetchUserMonthlyReportData(firestore, user.uid, currentMonth, schoolConfig);
         
         const formattedReport: ReportItem[] = rawReport.map((record) => ({
@@ -99,31 +94,6 @@ export default function LaporanPage() {
       fetchReport();
   }, [fetchReport, toast]);
 
-  const openCancelDialog = (leaveId: string) => {
-      setSelectedLeaveId(leaveId);
-      setIsCancelDialogOpen(true);
-  };
-
-  const confirmCancelRequest = async () => {
-    if (!user || !firestore || !selectedLeaveId) return;
-
-    setIsCancelling(true);
-    const leaveRequestRef = doc(firestore, 'users', user.uid, 'leaveRequests', selectedLeaveId);
-
-    try {
-      await deleteDoc(leaveRequestRef);
-      toast({ title: 'Pengajuan Dibatalkan', description: 'Pengajuan izin Anda telah berhasil dibatalkan.' });
-      handleRefresh();
-    } catch (error: any) {
-      console.error("Failed to cancel leave request:", error);
-      toast({ title: "Gagal Membatalkan", description: error.message || "Terjadi kesalahan.", variant: "destructive" });
-    } finally {
-      setIsCancelling(false);
-      setIsCancelDialogOpen(false);
-      setSelectedLeaveId(null);
-    }
-  };
-
   const handlePrevMonth = () => setCurrentMonth(prev => subMonths(prev, 1));
   const handleNextMonth = () => setCurrentMonth(prev => addMonths(prev, 1));
 
@@ -150,7 +120,7 @@ export default function LaporanPage() {
                   </Button>
               </div>
               <div className="border rounded-md overflow-x-auto">
-                  <Table className="min-w-[800px]">
+                  <Table className="min-w-[700px]">
                       <TableHeader>
                           <TableRow>
                               <TableHead className="w-[50px] text-center">No.</TableHead>
@@ -159,37 +129,28 @@ export default function LaporanPage() {
                               <TableHead className="w-[100px] text-center">Jam Pulang</TableHead>
                               <TableHead className="w-[120px]">Status</TableHead>
                               <TableHead>Keterangan</TableHead>
-                              <TableHead className="w-[120px] text-center">Aksi</TableHead> 
                           </TableRow>
                       </TableHeader>
                       <TableBody>
                           {isReportLoading && monthlyReportData.length === 0 ? (
-                               <TableRow><TableCell colSpan={7} className="h-64 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /><p className="mt-2">Memuat Laporan...</p></TableCell></TableRow>
+                               <TableRow><TableCell colSpan={6} className="h-64 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /><p className="mt-2">Memuat Laporan...</p></TableCell></TableRow>
                           ) : monthlyReportData.length > 0 ? (
                               monthlyReportData.map((record, index) => (
                                   <TableRow key={`${record.id}-${index}`}>
                                       <TableCell className="text-center">{index + 1}</TableCell>
                                       <TableCell className="font-medium whitespace-nowrap">{record.dateString}</TableCell>
                                       <TableCell className="text-center">{record.checkInTime}</TableCell>
-                                      <TableCell className="text-center">{record.checkOutTime}</TableCell>
+                                      <TableCell className="text-center">{record.checkOutTimae}</TableCell>
                                       <TableCell>
                                         <Badge variant={coreStatusToVariant[record.status] || 'default'}>
                                           {record.status}
                                         </Badge>
                                       </TableCell>
                                       <TableCell title={record.keterangan}>{record.keterangan}</TableCell>
-                                      <TableCell className="text-center">
-                                        {record.isCancellable && (
-                                          <Button variant="destructive" size="sm" onClick={() => openCancelDialog(record.id)} disabled={isCancelling}>
-                                            <XCircle className="h-4 w-4 mr-2" />
-                                            Batalkan
-                                          </Button>
-                                        )}
-                                      </TableCell>
                                   </TableRow>
                               ))
                           ) : (
-                              <TableRow><TableCell colSpan={7} className="h-24 text-center">Tidak ada riwayat untuk bulan ini.</TableCell></TableRow>
+                              <TableRow><TableCell colSpan={6} className="h-24 text-center">Tidak ada riwayat untuk bulan ini.</TableCell></TableRow>
                           )}
                       </TableBody>
                   </Table>
@@ -198,24 +159,6 @@ export default function LaporanPage() {
           )}
         </CardContent>
       </Card>
-
-      <AlertDialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Konfirmasi Pembatalan</AlertDialogTitle>
-            <AlertDialogDescription>
-              Apakah Anda yakin ingin membatalkan pengajuan izin ini? Tindakan ini tidak dapat diurungkan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isCancelling}>Tidak</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmCancelRequest} disabled={isCancelling}>
-              {isCancelling && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} 
-              Ya, Batalkan
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
