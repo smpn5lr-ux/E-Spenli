@@ -28,7 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 
-// --- REFACTORED COMPONENT: AdminCorrectionDialog ---
+// --- COMPONENT: AdminCorrectionDialog (Unchanged) ---
 
 interface AdminCorrectionDialogProps {
   record: MonthlyReportData;
@@ -44,7 +44,6 @@ function AdminCorrectionDialog({ record, userId, onCorrectionComplete }: AdminCo
   const { toast } = useToast();
 
   useEffect(() => {
-    // Update state if the record changes
     setKeterangan(record.keterangan || '');
   }, [record]);
 
@@ -58,19 +57,17 @@ function AdminCorrectionDialog({ record, userId, onCorrectionComplete }: AdminCo
     try {
         const batch = writeBatch(firestore);
         const dateStr = format(parseISO(record.date), 'yyyy-MM-dd');
-        const attendanceRef = doc(firestore, 'users', userId, 'attendanceRecords', dateStr); // Use date for ID to ensure one record per day
+        const attendanceRef = doc(firestore, 'users', userId, 'attendanceRecords', dateStr);
 
-        // Data to set/update. It will create a new record if one doesn't exist for the day.
         const correctionData = {
             date: dateStr,
-            description: keterangan, // The admin's custom text
-            adminEdited: true,       // The crucial flag
-            updatedAt: serverTimestamp(), // Track when the edit happened
+            description: keterangan,
+            adminEdited: true,
+            updatedAt: serverTimestamp(),
         };
 
         batch.set(attendanceRef, correctionData, { merge: true });
 
-        // If this day had a leave request, we should probably cancel it to avoid conflicts.
         if (record.isCancellable) {
             const leaveRef = doc(firestore, 'users', userId, 'leaveRequests', record.id);
             batch.delete(leaveRef);
@@ -78,7 +75,7 @@ function AdminCorrectionDialog({ record, userId, onCorrectionComplete }: AdminCo
 
         await batch.commit();
         toast({ title: "Koreksi Berhasil", description: `Keterangan telah diperbarui menjadi: "${keterangan}"` });
-        onCorrectionComplete(); // Refresh the report data
+        onCorrectionComplete();
         setIsOpen(false);
     } catch (error: any) {
         console.error("Correction failed:", error);
@@ -122,7 +119,7 @@ function AdminCorrectionDialog({ record, userId, onCorrectionComplete }: AdminCo
   );
 }
 
-// --- COMPONENT: UserReportDetailPage (Main - Largely Unchanged) ---
+// --- COMPONENT: UserReportDetailPage (FIXED) ---
 
 const coreStatusToVariant: { [key in CoreStatus]: 'default' | 'destructive' | 'secondary' } = {
     'Hadir': 'default',
@@ -161,7 +158,8 @@ export default function UserReportDetailPage() {
             if (!userSnap.exists()) throw new Error('Pengguna tidak ditemukan.');
             setUserData(userSnap.data());
 
-            const reportData = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfigData, {});
+            // **THE FIX**: Removed the empty object {} to allow the function to fetch holiday config itself.
+            const reportData = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfigData);
             setMonthlyReportData(reportData);
 
         } catch (err: any) {
@@ -288,7 +286,7 @@ export default function UserReportDetailPage() {
                                 ) : (
                                     <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="h-24 text-center">Tidak ada data untuk ditampilkan.</TableCell></TableRow>
                                 )}
-                            </Body>
+                            </TableBody>
                         </Table>
                     </div>
                 </CardContent>

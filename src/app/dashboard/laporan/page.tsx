@@ -46,7 +46,7 @@ interface ReportItem extends MonthlyReportData {
   dateString: string;
 }
 
-// --- Main Component (CACHE REMOVED FOR DATA CONSISTENCY) ---
+// --- Main Component (FIXED) ---
 export default function LaporanPage() {
   const { user, isUserLoading: isAuthLoading } = useUser();
   const firestore = useFirestore();
@@ -71,7 +71,8 @@ export default function LaporanPage() {
     setIsReportLoading(true);
 
     try {
-        const rawReport = await fetchUserMonthlyReportData(firestore, user.uid, currentMonth, schoolConfig, {});
+        // **THE FIX**: Removed the empty object {} to allow the function to fetch holiday config itself.
+        const rawReport = await fetchUserMonthlyReportData(firestore, user.uid, currentMonth, schoolConfig);
         
         const formattedReport: ReportItem[] = rawReport.map((record) => ({
             ...record,
@@ -90,11 +91,9 @@ export default function LaporanPage() {
   }, [firestore, user, schoolConfig, currentMonth, isAuthLoading, isConfigLoading, toast]);
 
   useEffect(() => {
-    // Fetch report whenever the dependencies change (e.g., month, user, config)
     fetchReport();
   }, [fetchReport]);
 
-  // handleRefresh now simply calls fetchReport again.
   const handleRefresh = useCallback(() => {
       toast({ title: 'Sinkronisasi Data', description: 'Memuat data terbaru dari server.' });
       fetchReport();
@@ -114,7 +113,7 @@ export default function LaporanPage() {
     try {
       await deleteDoc(leaveRequestRef);
       toast({ title: 'Pengajuan Dibatalkan', description: 'Pengajuan izin Anda telah berhasil dibatalkan.' });
-      handleRefresh(); // Refresh to show the change
+      handleRefresh();
     } catch (error: any) {
       console.error("Failed to cancel leave request:", error);
       toast({ title: "Gagal Membatalkan", description: error.message || "Terjadi kesalahan.", variant: "destructive" });
