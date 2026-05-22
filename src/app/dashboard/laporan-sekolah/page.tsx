@@ -138,7 +138,6 @@ export default function SchoolReportPage() {
 
                 const reportPromises = usersSnapshot.docs.map(async (userDoc) => {
                     const userData = userDoc.data();
-                    // --- FIX: Pass currentMonth directly, not a dateRange object ---
                     const stats = await calculateAttendanceStats(firestore, userDoc.id, currentMonth);
                     
                     return {
@@ -152,7 +151,6 @@ export default function SchoolReportPage() {
                         totalIzin: stats.totalIzin,
                         totalSakit: stats.totalSakit,
                         totalAlpa: stats.totalAlpa,
-                        // --- FIX: Access the correct property `percentage` and format it ---
                         persentase: `${(stats.percentage || 0).toFixed(1)}%`,
                     };
                 });
@@ -209,7 +207,7 @@ export default function SchoolReportPage() {
             item.name,
             item.nip,
             item.position,
-            item.totalHadir, // No longer needs Math.ceil as it's a whole number count
+            item.totalHadir, 
             item.totalIzin,
             item.totalSakit,
             item.totalAlpa,
@@ -260,7 +258,7 @@ export default function SchoolReportPage() {
             head: [['No', 'Nama', 'NIP', 'Status', 'Hadir', 'Izin', 'Sakit', 'Alpa', 'Persen']],
             body: filteredReports.map(item => [
                 item.no, item.name, item.nip, item.position,
-                item.totalHadir, // No longer needs Math.ceil
+                item.totalHadir, 
                 item.totalIzin,
                 item.totalSakit,
                 item.totalAlpa, 
@@ -291,7 +289,7 @@ export default function SchoolReportPage() {
         const doc = new jsPDF();
         
         try {
-            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, {}); // Pass empty monthlyConfig
+            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, {});
             
             let startY = addReportHeader(doc);
             const pageWidth = doc.internal.pageSize.getWidth();
@@ -314,7 +312,7 @@ export default function SchoolReportPage() {
                 body: reportDetails.map((d, i) => [
                     i + 1, safeFormat(d.date, 'E, dd/MM/yy', { locale: id }),
                     safeFormat(d.checkInTime, 'HH:mm'), safeFormat(d.checkOutTime, 'HH:mm'),
-                    d.status, d.description || '-'
+                    d.status, d.keterangan || '-'
                 ]),
                 theme: 'grid',
                 styles: { fontSize: 9.5, font: 'times', cellPadding: 2 },
@@ -333,7 +331,7 @@ export default function SchoolReportPage() {
     const handleDownloadUserExcel = async (targetUser: ReportRowData) => {
         if (!firestore || !schoolConfigData) return;
         try {
-            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, {}); // Pass empty monthlyConfig
+            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, {});
             const kopSurat = [['PEMERINTAH KABUPATEN MANGGARAI'], ['DINAS PENDIDIKAN PEMUDA DAN OLAHRAGA'], ['SMP NEGERI 5 LANGKE REMBONG'], ['Alamat: Mando, Kelurahan compang carep, Kecamatan Langke Rembong'], [], ['LAPORAN KEHADIRAN'], [`Periode: ${monthName}`], []];
             const userInfo = [['Nama', `: ${targetUser.name}`], ['NIP', `: ${targetUser.nip || '-'}`], ['Status Kepegawaian', `: ${targetUser.position || '-'}`], []];
             const tableHeaders = ['No', 'Tanggal', 'Jam Masuk', 'Jam Pulang', 'Status', 'Keterangan'];
@@ -344,7 +342,7 @@ export default function SchoolReportPage() {
                 safeFormat(d.checkInTime, 'HH:mm'),
                 safeFormat(d.checkOutTime, 'HH:mm'),
                 d.status,
-                d.description || '-'
+                d.keterangan || '-'
             ]);
 
             const signature = [[], [], [null, null, null, null, `Mando, ${format(new Date(), 'd MMMM yyyy', { locale: id })}`], [null, null, null, null, 'Mengetahui,'], [null, null, null, null, 'Kepala Sekolah'], [], [], [null, null, null, null, principal ? principal.name : '(...................................)'], [null, null, null, null, principal?.nip ? `NIP. ${principal.nip}` : '']];
