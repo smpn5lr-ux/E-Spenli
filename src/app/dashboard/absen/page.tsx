@@ -28,7 +28,7 @@ const getCurrentPosition = (options?: PositionOptions): Promise<GeolocationPosit
   new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, options));
 
 // --- Types ---
-type FeedbackStatus = 'idle' | 'processing' | 'locating' | 'success_in' | 'success_out' | 'error_radius' | 'error_time' | 'error_already_in' | 'error_already_out' | 'error_generic' | 'error_location' | 'info_holiday' | 'info_checked_out' | 'info_no_camera';
+type FeedbackStatus = 'idle' | 'processing' | 'locating' | 'success_in' | 'success_out' | 'error_radius' | 'error_time' | 'error_already_in' | 'error_already_out' | 'error_generic' | 'error_location' | 'info_holiday' | 'info_checked_out' | 'info_no_camera' | 'info_system_disabled';
 
 // --- Main Component ---
 export default function AbsenPage() {
@@ -65,9 +65,10 @@ export default function AbsenPage() {
   // --- Derived State ---
   const isDataLoading = isUserLoading || isUserDataLoading || isConfigLoading || isAttendanceLoading || isMonthlyConfigLoading;
   const isCameraInitializing = hasCameraPermission === null;
+  
+  const isSystemDisabled = useMemo(() => schoolConfig?.isAttendanceActive === false, [schoolConfig]);
   const isHoliday = useMemo(() => {
     if (!schoolConfig) return false;
-    if (schoolConfig.isAttendanceActive === false) return true;
     const today = new Date(), todayStr = format(today, 'yyyy-MM-dd');
     if (monthlyConfig?.holidays?.includes(todayStr)) return true;
     const offDays: number[] = schoolConfig.offDays ?? [0, 6];
@@ -78,13 +79,14 @@ export default function AbsenPage() {
   const effectiveStatus: FeedbackStatus = useMemo(() => {
       if (status !== 'idle') return status;
       if (isDataLoading) return 'idle';
+      if (isSystemDisabled) return 'info_system_disabled';
       if (hasCompletedAttendance) return 'info_checked_out';
       if (isHoliday) return 'info_holiday';
       if (hasCameraPermission === false) return 'info_no_camera';
       return 'idle';
-  }, [status, isDataLoading, hasCompletedAttendance, isHoliday, hasCameraPermission]);
+  }, [status, isDataLoading, isSystemDisabled, hasCompletedAttendance, isHoliday, hasCameraPermission]);
 
-  const showScanner = !isDataLoading && hasCameraPermission && !isHoliday && !hasCompletedAttendance;
+  const showScanner = !isDataLoading && hasCameraPermission && !isSystemDisabled && !isHoliday && !hasCompletedAttendance;
   const showLoader = isDataLoading || isCameraInitializing || (showScanner && !isScannerReady);
 
   const handleAttendance = useCallback(async () => {
@@ -95,22 +97,18 @@ export default function AbsenPage() {
     }
     setStatus('processing');
     
-    // --- MODIFIED BLOCK: Updated time validation logic ---
     let isCheckInTime = false, isCheckOutTime = false;
     if (schoolConfig.useTimeValidation) {
         const now = new Date();
-        const dayOfWeek = now.getDay(); // Sunday - 0, Monday - 1, etc.
+        const dayOfWeek = now.getDay();
         const currentTime = now.getHours() * 60 + now.getMinutes();
 
-        // 1. Check-in time validation (remains unchanged)
         const [inStartH, inStartM] = schoolConfig.checkInStartTime.split(':').map(Number);
         const checkInStartTime = inStartH * 60 + inStartM;
         const [inEndH, inEndM] = schoolConfig.checkInEndTime.split(':').map(Number);
         const checkInEndTime = inEndH * 60 + inEndM;
         isCheckInTime = currentTime >= checkInStartTime && currentTime <= checkInEndTime;
 
-        // 2. Check-out time validation (THE FIX)
-        // Use daily schedule if available
         const dailyCheckoutConfig = schoolConfig.checkOutTimes?.[dayOfWeek];
         if (dailyCheckoutConfig && dailyCheckoutConfig.start && dailyCheckoutConfig.end) {
             const [outStartH, outStartM] = dailyCheckoutConfig.start.split(':').map(Number);
@@ -119,7 +117,6 @@ export default function AbsenPage() {
             const checkOutEndTime = outEndH * 60 + outEndM;
             isCheckOutTime = currentTime >= checkOutStartTime && currentTime <= checkOutEndTime;
         } else {
-            // Fallback to old global settings for robustness if daily is not configured
             if (schoolConfig.checkOutStartTime && schoolConfig.checkOutEndTime) {
                 const [outStartH, outStartM] = schoolConfig.checkOutStartTime.split(':').map(Number);
                 const checkOutStartTime = outStartH * 60 + outStartM;
@@ -129,17 +126,14 @@ export default function AbsenPage() {
             }
         }
         
-        // If it's not time for check-in or check-out, show error.
         if (!isCheckInTime && !isCheckOutTime) return setStatus('error_time');
     } else {
-        // If time validation is disabled, decide based on existing record.
         if (todaysRecord && !todaysRecord.checkOutTime) {
             isCheckOutTime = true;
         } else {
             isCheckInTime = true;
         }
     }
-    // --- END MODIFIED BLOCK ---
 
     try {
         let latitude: number | null = null, longitude: number | null = null;
@@ -267,7 +261,7 @@ export default function AbsenPage() {
   }, [showScanner, status, onScanSuccess]);
 
   const handleOnClose = useMemo(() => {
-    const isSuccessOrFinished = ['success_in', 'success_out', 'info_checked_out', 'info_holiday'].includes(effectiveStatus);
+    const isSuccessOrFinished = ['success_in', 'success_out', 'info_checked_out', 'info_holiday', 'info_system_disabled'].includes(effectiveStatus);
     return isSuccessOrFinished ? handleCloseRedirect : () => setStatus('idle');
   }, [effectiveStatus, handleCloseRedirect]);
 
@@ -293,7 +287,7 @@ export default function AbsenPage() {
           </div>
 
           <div className="relative w-full max-w-[280px] sm:max-w-xs aspect-square">
-            {(!isHoliday && !hasCompletedAttendance) && (
+            {(!isHoliday && !hasCompletedAttendance && !isSystemDisabled) && (
               <>
                 <div className={cn("absolute top-0 left-0 w-1/4 h-1/4 border-t-4 border-l-4 rounded-tl-xl transition-colors duration-300", borderColor)} />
                 <div className={cn("absolute top-0 right-0 w-1/4 h-1/4 border-t-4 border-r-4 rounded-tr-xl transition-colors duration-300", borderColor)} />
@@ -330,7 +324,8 @@ const StatusFeedbackOverlay = ({ status, locationError, onClose, userData }: { s
             case 'error_already_in': return { icon: <X className="h-16 w-16 text-destructive" />, title: 'Gagal: Sudah Absen Masuk', desc: 'Anda sudah melakukan absensi masuk hari ini.', cardClass: 'bg-destructive/10 border-destructive' };
             case 'error_already_out': return { icon: <X className="h-16 w-16 text-destructive" />, title: 'Gagal: Sudah Absen Pulang', desc: 'Anda sudah melakukan absensi pulang hari ini.', cardClass: 'bg-destructive/10 border-destructive' };
             case 'error_location': return { icon: <MapPin className="h-16 w-16 text-destructive" />, title: 'Gagal: Lokasi Error', desc: locationError || 'Pastikan GPS aktif dan berikan izin akses.', cardClass: 'bg-destructive/10 border-destructive' };
-            case 'info_holiday': return { icon: <CalendarOff className="h-16 w-16 text-blue-500" />, title: 'Hari Libur', desc: 'Sistem absensi tidak aktif hari ini.', cardClass: 'bg-blue-50 dark:bg-blue-950/50 border-blue-800' };
+            case 'info_system_disabled': return { icon: <AlertTriangle className="h-16 w-16 text-destructive" />, title: 'Sistem Dinonaktifkan', desc: 'Sistem absensi telah dinonaktifkan sementara oleh Administrator.', cardClass: 'bg-destructive/10 border-destructive' };
+            case 'info_holiday': return { icon: <CalendarOff className="h-16 w-16 text-blue-500" />, title: 'Hari Libur', desc: 'Absensi tidak aktif pada hari libur rutin atau yang telah ditentukan.', cardClass: 'bg-blue-50 dark:bg-blue-950/50 border-blue-800' };
             case 'info_checked_out': return { icon: <CheckCircle className="h-16 w-16 text-green-500" />, title: 'Absensi Selesai', desc: 'Anda telah menyelesaikan absensi untuk hari ini.', cardClass: 'bg-green-50 dark:bg-green-950/50 border-green-800' };
             case 'info_no_camera': return { icon: <CameraOff className="h-16 w-16 text-destructive" />, title: 'Kamera Tidak Tersedia', desc: 'Izinkan akses kamera di pengaturan browser, lalu segarkan halaman ini.', cardClass: 'bg-destructive/10 border-destructive' };
             default: return { icon: <AlertTriangle className="h-16 w-16 text-destructive" />, title: 'Gagal: Terjadi Kesalahan', desc: 'Silakan coba lagi beberapa saat.', cardClass: 'bg-destructive/10 border-destructive' };
@@ -339,9 +334,6 @@ const StatusFeedbackOverlay = ({ status, locationError, onClose, userData }: { s
 
     const showQuote = useMemo(() => (status === 'success_in' || status === 'success_out') && userData?.role !== 'admin', [status, userData]);
     const attendanceType = useMemo(() => {
-        // BUG FIX: The quote logic was inverted. This corrects it.
-        // When attendance is successful (success_in), we need an 'in' quote.
-        // When checkout is successful (success_out), we need an 'out' quote.
         if (status === 'success_in') return 'in';
         if (status === 'success_out') return 'out';
         return null;
