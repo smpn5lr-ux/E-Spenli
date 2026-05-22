@@ -8,7 +8,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     const isAbsenPage = pathname === '/dashboard/absen';
 
   return (
-    <div className="overflow-x-hidden">
+    <div>
       {!isAbsenPage && <Header />}
       {/* 
         The main content area.
