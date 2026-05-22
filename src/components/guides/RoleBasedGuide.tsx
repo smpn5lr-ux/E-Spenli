@@ -32,7 +32,11 @@ const CommonGuide = () => (
 
 const AdminGuide = () => (
   <div className="space-y-6">
-    <CommonGuide />
+    <div className="rounded-md border border-sky-500/30 bg-sky-50/50 p-3 text-sky-900">
+        <p className="text-sm">
+            Peran Anda sebagai <strong>Admin</strong> adalah untuk mengelola dan memantau keseluruhan sistem. Anda <strong>tidak melakukan absensi</strong>, namun memiliki kontrol penuh terhadap data dan pengaturan aplikasi.
+        </p>
+    </div>
     <div>
         <h4 className="font-bold text-base">Cara Mengelola Pengguna</h4>
         <ol className="list-decimal pl-5 mt-2 space-y-2 text-muted-foreground">
@@ -93,7 +97,8 @@ const GuruPegawaiGuide = () => (
                 <li>Masuk ke menu <b>Pengajuan Izin</b>.</li>
                 <li>Klik tombol <b>"+ Buat Pengajuan"</b>.</li>
                 <li>Pilih jenis izin (Sakit/Izin), tanggal, dan tuliskan keterangan. Jika perlu, unggah file bukti (misal: surat dokter).</li>
-                <li>Klik <b>"Kirim Pengajuan"</b>. Status pengajuan Anda akan menjadi "Menunggu Persetujuan" hingga divalidasi oleh Kepala Sekolah/Admin.</li>
+                <li>Klik <b>"Kirim Pengajuan"</b>. Status pengajuan Anda akan menjadi "Menunggu Persetujuan".</li>
+                <li><b>Penting:</b> Setelah membuat pengajuan, segera hubungi Kepala Sekolah (via WhatsApp atau telepon) agar pengajuan Anda dapat ditinjau dan disetujui lebih cepat.</li>
             </ol>
         </div>
         <div>
@@ -101,7 +106,7 @@ const GuruPegawaiGuide = () => (
             <ol className="list-decimal pl-5 mt-2 space-y-2 text-muted-foreground">
                 <li>Buka menu <b>Laporan</b>.</li>
                 <li>Sistem akan secara otomatis menampilkan riwayat kehadiran Anda untuk <b>bulan berjalan</b>.</li>
-                <li>Anda dapat langsung meninjau riwayat pada halaman ini, jika ada kehadiran yang belum lengkap karena lupa absen segera hubungi admin/kepala sekolah untuk segera diperbaiki.</li>
+                <li>Anda dapat langsung meninjau riwayat pada halaman ini atau mengunduhnya sebagai file PDF.</li>
             </ol>
             <div className="mt-3 flex items-start gap-2 rounded-md border border-sky-500/30 bg-sky-50/50 p-3 text-sky-900 ">
                 <AlertTriangle className="h-5 w-5 mt-0.5 text-sky-600 flex-shrink-0" />
