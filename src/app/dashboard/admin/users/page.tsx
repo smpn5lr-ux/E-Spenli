@@ -1,6 +1,5 @@
 'use client';
 import React, { useState, useMemo, useEffect } from 'react';
-
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -164,7 +163,7 @@ function UsersView({ isAllowed, canManage }: { isAllowed: boolean, canManage: bo
                 userDoc.skNumber = values.skNumber?.trim() || null;
             }
 
-            await setDocumentNonBlocking(doc(firestore, "users", newUser.uid), userDoc, { customId: newUser.uid });
+            await setDocumentNonBlocking(doc(firestore, "users", newUser.uid), userDoc, {});
             toast({ title: 'Pengguna Ditambahkan', description: `Akun untuk ${values.name} telah dibuat.` });
             addForm.reset();
             setIsAddUserDialogOpen(false);
@@ -254,7 +253,22 @@ function UsersView({ isAllowed, canManage }: { isAllowed: boolean, canManage: bo
                             <DialogTrigger asChild><Button><PlusCircle className="mr-2 h-4 w-4" />Tambah Pengguna</Button></DialogTrigger>
                             <DialogContent className="sm:max-w-[480px]">
                                 <DialogHeader><DialogTitle>Tambah Pengguna Baru</DialogTitle><DialogDescription>Isi detail di bawah untuk membuat akun baru.</DialogDescription></DialogHeader>
-                                <Form {...addForm}>{/* ... Add form fields ... */}</Form>
+                                <Form {...addForm}>
+                                    <form onSubmit={addForm.handleSubmit(handleCreateUser)} className="space-y-4">
+                                        <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto pr-4">
+                                            <FormField control={addForm.control} name="role" render={({ field }) => (<FormItem><FormLabel>Peran Pengguna</FormLabel><FormControl><RadioGroup onValueChange={(value) => { field.onChange(value); addForm.setValue('position', ''); }} value={field.value} className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Object.entries(roleConfig).map(([role, config]) => { const isDisabled = role === 'kepala_sekolah' && headmasterExists; const radioItem = <FormItem key={role}><FormControl><RadioGroupItem value={role} id={`add-${role}`} className="sr-only" disabled={isDisabled} /></FormControl><Label htmlFor={`add-${role}`} className={cn('flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 text-center hover:bg-accent hover:text-accent-foreground cursor-pointer', { 'border-primary': selectedRoleForAdd === role, 'cursor-not-allowed opacity-50': isDisabled })}>{config.icon}<span className="mt-1.5 text-xs">{config.title}</span></Label></FormItem>; if (isDisabled) return <TooltipProvider key={role} delayDuration={100}><Tooltip><TooltipTrigger asChild><div className="w-full h-full">{radioItem}</div></TooltipTrigger><TooltipContent><p>Posisi Kepala Sekolah sudah terisi.</p></TooltipContent></Tooltip></TooltipProvider>; return radioItem;})}</RadioGroup></FormControl></FormItem>)} />
+                                            <FormField control={addForm.control} name="name" render={({ field }) => (<FormItem><FormLabel>Nama Lengkap</FormLabel><FormControl><Input placeholder="Nama lengkap dengan gelar..." {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                                            <FormField control={addForm.control} name="email" render={({ field }) => (<FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="email.aktif@contoh.com" {...field} /></FormControl><FormDescription className="text-xs">Pengguna akan menerima email verifikasi.</FormDescription><FormMessage /></FormItem>)}/>
+                                            {(selectedRoleForAdd === 'guru' || selectedRoleForAdd === 'kepala_sekolah') && <FormField control={addForm.control} name="sequenceNumber" render={({ field }) => (<FormItem><FormLabel>Nomor Urut</FormLabel><FormControl><Input placeholder="Nomor untuk pengurutan daftar" {...field} /></FormControl><FormDescription className="text-xs">Sesuai nomor urut pada SK.</FormDescription><FormMessage /></FormItem>)}/>}                                                
+                                            {selectedRoleForAdd === 'pegawai' && <FormField control={addForm.control} name="skNumber" render={({ field }) => (<FormItem><FormLabel>Nomor Urut (dari SK)</FormLabel><FormControl><Input placeholder="Masukkan nomor urut dari SK" {...field} /></FormControl><FormMessage /></FormItem>)}/>}
+                                            {(selectedRoleForAdd === 'guru' || selectedRoleForAdd === 'kepala_sekolah' || selectedRoleForAdd === 'pegawai') && <FormField control={addForm.control} name="identifier" render={({ field }) => (<FormItem><FormLabel>{roleConfig[selectedRoleForAdd as Role]?.label} <span className="text-muted-foreground">(Opsional)</span></FormLabel><FormControl><Input placeholder={roleConfig[selectedRoleForAdd as Role]?.placeholder} {...field} /></FormControl><FormMessage /></FormItem>)} />}
+                                            {(selectedRoleForAdd === 'guru' || selectedRoleForAdd === 'kepala_sekolah' || selectedRoleForAdd === 'pegawai') && <FormField control={addForm.control} name="position" render={({ field }) => (<FormItem><FormLabel>Status Kepegawaian <span className="text-muted-foreground">(Opsional)</span></FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih status..." /></SelectTrigger></FormControl><SelectContent>{(selectedRoleForAdd === 'guru' || selectedRoleForAdd === 'kepala_sekolah') ? guruPositions.map(pos => <SelectItem key={pos} value={pos}>{pos}</SelectItem>) : pegawaiPositions.map(pos => <SelectItem key={pos} value={pos}>{pos}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />}
+                                            <FormField control={addForm.control} name="password" render={({ field }) => (<FormItem><FormLabel>Password</FormLabel><FormControl><Input type="password" placeholder="Minimal 6 karakter" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                                            <FormField control={addForm.control} name="confirmPassword" render={({ field }) => (<FormItem><FormLabel>Konfirmasi Password</FormLabel><FormControl><Input type="password" placeholder="Ulangi password di atas" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                                        </div>
+                                        <DialogFooter><Button type="submit" className="w-full" disabled={isSaving}>{isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}<span>Buat Akun Pengguna</span></Button></DialogFooter>
+                                    </form>
+                                </Form>
                             </DialogContent>
                         </Dialog>
                     )}
@@ -282,9 +296,32 @@ function UsersView({ isAllowed, canManage }: { isAllowed: boolean, canManage: bo
                 </Card>
             </section>
 
-            {/* Dialogs for Edit, Delete etc. remain here */}
-            <Dialog open={isEditUserDialogOpen} onOpenChange={setIsEditUserDialogOpen}>{/* ... Edit Dialog Content ... */}</Dialog>
-            <AlertDialog open={isDeleteDialogOpen} onOpenChange={handleDialogStateChange}>{/* ... Delete Alert Dialog Content ... */}</AlertDialog>
+            <Dialog open={isEditUserDialogOpen} onOpenChange={setIsEditUserDialogOpen}>
+                <DialogContent className="sm:max-w-[480px]">
+                    <DialogHeader><DialogTitle>Edit Pengguna</DialogTitle><DialogDescription>Perbarui detail informasi pengguna. Email tidak dapat diubah.</DialogDescription></DialogHeader>
+                    <Form {...editForm}>
+                        <form onSubmit={editForm.handleSubmit(handleUpdateUser)} className="space-y-4">
+                            <div className="py-4 space-y-4 max-h-[70vh] overflow-y-auto pr-4">
+                                <div className="space-y-2"><Label htmlFor="edit-email">Email</Label><Input id="edit-email" value={selectedUser?.email || ''} readOnly disabled /></div>
+                                <FormField control={editForm.control} name="role" render={({ field }) => (<FormItem><FormLabel>Peran Pengguna</FormLabel><FormControl><RadioGroup onValueChange={(value) => { field.onChange(value); editForm.setValue('position', ''); }} value={field.value} className="grid grid-cols-2 sm:grid-cols-4 gap-2" disabled={selectedUser?.email === 'admin@sekolah.sch.id'}>{Object.entries(roleConfig).map(([role, config]) => { const isDisabled = role === 'kepala_sekolah' && headmasterExists && selectedUser?.role !== 'kepala_sekolah'; const radioItem = <FormItem key={role}><FormControl><RadioGroupItem value={role} id={`edit-${role}`} className="sr-only" disabled={isDisabled}/></FormControl><Label htmlFor={`edit-${role}`} className={cn('flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 text-center hover:bg-accent hover:text-accent-foreground cursor-pointer', { 'border-primary': selectedRoleForEdit === role, 'cursor-not-allowed opacity-50': isDisabled })}>{config.icon}<span className="mt-1.5 text-xs">{config.title}</span></Label></FormItem>; if (isDisabled) return <TooltipProvider key={role} delayDuration={100}><Tooltip><TooltipTrigger asChild><div className="w-full h-full">{radioItem}</div></TooltipTrigger><TooltipContent><p>Posisi Kepala Sekolah sudah terisi.</p></TooltipContent></Tooltip></TooltipProvider>; return radioItem;})}</RadioGroup></FormControl>{selectedUser?.email === 'admin@sekolah.sch.id' && <FormDescription className="text-xs">Peran admin utama tidak dapat diubah.</FormDescription>}</FormItem>)}/>
+                                <FormField control={editForm.control} name="name" render={({ field }) => (<FormItem><FormLabel>Nama Lengkap (dengan gelar)</FormLabel><FormControl><Input placeholder="Contoh: Budi Santoso, S.Pd" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                                {(selectedRoleForEdit === 'guru' || selectedRoleForEdit === 'kepala_sekolah') && <FormField control={editForm.control} name="sequenceNumber" render={({ field }) => (<FormItem><FormLabel>Nomor Urut</FormLabel><FormControl><Input placeholder="Nomor untuk pengurutan daftar" {...field} /></FormControl><FormDescription className="text-xs">Sesuai nomor urut pada SK.</FormDescription><FormMessage /></FormItem>)}/>}
+                                {selectedRoleForEdit === 'pegawai' && <FormField control={editForm.control} name="skNumber" render={({ field }) => (<FormItem><FormLabel>Nomor Urut (dari SK)</FormLabel><FormControl><Input placeholder="Masukkan nomor urut dari SK" {...field} /></FormControl><FormMessage /></FormItem>)}/>}
+                                {(selectedRoleForEdit === 'guru' || selectedRoleForEdit === 'kepala_sekolah' || selectedRoleForEdit === 'pegawai') && <FormField control={editForm.control} name="identifier" render={({ field }) => (<FormItem><FormLabel>{roleConfig[selectedRoleForEdit as Role]?.label || "Identifier"}<span className="text-muted-foreground ml-1">(Opsional)</span></FormLabel><FormControl><Input placeholder={roleConfig[selectedRoleForEdit as Role]?.placeholder} {...field} /></FormControl><FormMessage /></FormItem>)}/>}
+                                {(selectedRoleForEdit === 'guru' || selectedRoleForEdit === 'kepala_sekolah' || selectedRoleForEdit === 'pegawai') && <FormField control={editForm.control} name="position" render={({ field }) => (<FormItem><FormLabel>Status Kepegawaian <span className="text-muted-foreground">(Opsional)</span></FormLabel><Select onValueChange={field.onChange} value={field.value || ''}><FormControl><SelectTrigger><SelectValue placeholder="Pilih status..." /></SelectTrigger></FormControl><SelectContent>{(selectedRoleForEdit === 'guru' || selectedRoleForEdit === 'kepala_sekolah') ? guruPositions.map(pos => <SelectItem key={pos} value={pos}>{pos}</SelectItem>) : pegawaiPositions.map(pos => <SelectItem key={pos} value={pos}>{pos}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />}
+                            </div>
+                            <DialogFooter><Button type="submit" className="w-full" disabled={isSaving}>{isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}<span>Simpan Perubahan</span></Button></DialogFooter>
+                        </form>
+                    </Form>
+                </DialogContent>
+            </Dialog>
+            
+            <AlertDialog open={isDeleteDialogOpen} onOpenChange={handleDialogStateChange}>
+                <AlertDialogContent>
+                    <AlertDialogHeader><AlertDialogTitle>Anda yakin ingin menghapus pengguna ini?</AlertDialogTitle><AlertDialogDescription>Tindakan ini akan menghapus data profil pengguna ({userToDelete?.name}) secara permanen. Tindakan ini TIDAK menghapus akun login pengguna, yang harus dihapus manual di Firebase Console.</AlertDialogDescription></AlertDialogHeader>
+                    <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleDeleteUser} className={cn(buttonVariants({ variant: "destructive" }))} disabled={isDeleting}>{isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Ya, Hapus Profil</AlertDialogAction></AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
