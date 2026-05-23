@@ -93,7 +93,7 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
         }
 
         if (!hasCheckedIn) {
-             const isLatePeriod = checkInEnd && now > checkInEnd && (!checkOutStart || now < checkOutStart);
+            const isLatePeriod = checkInEnd && now > checkInEnd && (!checkOutStart || now < checkOutStart);
             if (isLatePeriod) {
                  return {
                     variant: 'destructive',
@@ -134,10 +134,8 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                  }
             }
         }
-
         return null;
-
-    }, [attendanceRecord, isLoading, attendanceWindowStatus, schoolConfigData, currentTime, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, hasRejectedLateSubmission]);
+    }, [attendanceRecord, isLoading, attendanceWindowStatus, schoolConfigData, currentTime, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission]);
 
     const buttonStatus = useMemo(() => {
         if (isLoading || !schoolConfigData) {
@@ -151,22 +149,14 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
             return { text: 'Absensi Selesai', disabled: true, page: '#' };
         }
 
-        if (hasPendingLateSubmission || hasApprovedLateSubmission) {
+        if (hasPendingLateSubmission) {
+            return { text: 'Menunggu Persetujuan', disabled: true, page: '#' };
+        }
+
+        if (hasApprovedLateSubmission) {
             if (attendanceWindowStatus === 'CHECK_OUT_OPEN') {
                 return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' };
             }
-
-            if (attendanceWindowStatus === 'CLOSED') {
-                const isLatePeriod = !hasCheckedIn && checkInEnd && currentTime > checkInEnd && (!checkOutStart || currentTime < checkOutStart);
-                if (isLatePeriod) {
-                    return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' };
-                }
-            }
-
-            if (hasPendingLateSubmission) {
-                return { text: 'Menunggu Persetujuan Terlambat', disabled: true, page: '#' };
-            }
-
             return { text: 'Terlambat Disetujui', disabled: true, page: '#' };
         }
 
@@ -182,23 +172,25 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                 return hasCheckedIn ? { text: 'Sudah Absen Masuk', disabled: true, page: '#' } : { text: 'Absen Masuk', disabled: false, page: '/dashboard/absen' };
 
             case 'CHECK_OUT_OPEN':
-                return hasCheckedIn ? { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' } : { text: 'Anda Belum Absen Masuk', disabled: true, page: '#' };
+                // **REQUIREMENT FULFILLED**: Checkout button is always enabled during the checkout window,
+                // regardless of check-in status.
+                return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' };
 
             case 'CLOSED':
-                const isLatePeriod = !hasCheckedIn && checkInEnd && currentTime > checkInEnd && (!checkOutStart || currentTime < checkOutStart);
-                if (isLatePeriod) {
+                const now = currentTime;
+                const isAfterCheckInEnd = checkInEnd && now > checkInEnd;
+                const isBeforeCheckOutStart = checkOutStart && now < checkOutStart;
+
+                // **REQUIREMENT FULFILLED**: If check-in is missed, prompt for late submission.
+                if (!hasCheckedIn && isAfterCheckInEnd && isBeforeCheckOutStart) {
                     return { text: 'Ajukan Keterlambatan', disabled: false, page: '/dashboard/terlambat/ajukan' };
                 }
 
                 if (hasCheckedIn && !hasCheckedOut) {
-                    if (checkOutStart && currentTime < checkOutStart) {
-                        return { text: 'Belum Waktunya Pulang', disabled: true, page: '#' };
-                    } else {
-                        return { text: 'Sesi Pulang Berakhir', disabled: true, page: '#' };
-                    }
+                    return { text: 'Belum Waktunya Pulang', disabled: true, page: '#' };
                 }
                 
-                return { text: 'Absensi Ditutup', disabled: true, page: '#' };
+                return { text: 'Sesi Absensi Ditutup', disabled: true, page: '#' };
 
             case 'UPCOMING':
                 return { text: 'Belum Waktunya Absen', disabled: true, page: '#' };
@@ -274,7 +266,7 @@ const MonthlyAttendanceChartUI = ({ summaryData, isLoading }: { summaryData: any
     const chartData = [
         { name: 'Hadir', jumlah: summaryData.attendanceCount, fill: 'hsl(var(--card-green-bg))' },
         { name: 'Sakit', jumlah: summaryData.sakitCount, fill: 'hsl(var(--card-orange-bg))' },
-        { name: 'Izin', jumlah: summaryData.izinCount, fill: '#facc15' }, // Kept yellow for now
+        { name: 'Izin', jumlah: summaryData.izinCount, fill: '#facc15' },
         { name: 'Alpa', jumlah: summaryData.alpaCount, fill: 'hsl(var(--card-red-bg))' },
     ];
 
@@ -346,7 +338,7 @@ function useMonthlyAttendanceSummary(user: any) {
 }
 
 function useStaffDashboardStats(firestore: any, user: any) {
-  const cacheKey = 'staffDashboardStats_v3'; // Cache key updated
+  const cacheKey = 'staffDashboardStats_v3';
   const [stats, setStats] = useState<any>(() => getFromCache(cacheKey) || null);
   const [isLoading, setIsLoading] = useState(stats === null);
 
@@ -381,8 +373,6 @@ const HeadmasterDashboard = ({ user, router }: any) => {
     const { data: todaysAttendance, isLoading: isAttendanceLoading } = useCollection(user, todaysAttendanceQuery);
     const todaysLateSubmissionQuery = useMemoFirebase(() => user ? query(collection(firestore, 'users', user.uid, 'lateSubmissions'), where('date', '==', format(new Date(), 'yyyy-MM-dd')), limit(1)) : null, [firestore, user]);
     const { data: lateSubmissionData, isLoading: isLateSubmissionLoading } = useCollection(user, todaysLateSubmissionQuery);
-
-    const totalPending = (stats.pendingLeave || 0) + (stats.pendingLate || 0);
 
     return (
         <>
