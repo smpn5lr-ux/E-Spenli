@@ -16,6 +16,7 @@ import { id } from 'date-fns/locale';
 import { Check, X, Loader2, Info, ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface LeaveRequest {
   id: string;
@@ -29,6 +30,37 @@ interface LeaveRequest {
   processedAt?: Timestamp;
   processedBy?: string;
 }
+
+const ApprovalPageSkeleton = () => (
+    <PageWrapper title="Persetujuan Izin">
+        <Tabs defaultValue="pending">
+            <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="pending"><Skeleton className="h-6 w-48" /></TabsTrigger>
+                <TabsTrigger value="history"><Skeleton className="h-6 w-32" /></TabsTrigger>
+            </TabsList>
+            <TabsContent value="pending">
+                <Card>
+                    <CardHeader>
+                        <CardTitle><Skeleton className="h-7 w-64" /></CardTitle>
+                        <CardDescription><Skeleton className="h-4 w-full max-w-lg" /></CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>{[...Array(5)].map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}</TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {[...Array(3)].map((_, i) => (
+                                    <TableRow key={i}>{[...Array(5)].map((_, j) => <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>)}</TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+            </TabsContent>
+        </Tabs>
+    </PageWrapper>
+);
 
 export default function PersetujuanPage() {
   const { user, isUserLoading: isAuthLoading } = useUser();
@@ -47,7 +79,7 @@ export default function PersetujuanPage() {
 
   const { data: leaveRequests, isLoading: isLeaveRequestsLoading } = useCollection<LeaveRequest>(user, leaveRequestsQuery);
 
-  const isLoading = isAuthLoading || isUserDataLoading || isLeaveRequestsLoading;
+  const isLoading = isAuthLoading || isUserDataLoading;
   const isAdmin = !isLoading && userData?.role === 'admin';
 
   useEffect(() => {
@@ -89,12 +121,8 @@ export default function PersetujuanPage() {
     }
   };
   
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></div>;
-  }
-  
-  if (!isAdmin) {
-      return null; // or a dedicated access denied component
+  if (isLoading || !isAdmin) {
+    return <ApprovalPageSkeleton />;
   }
 
   return (
@@ -122,7 +150,17 @@ export default function PersetujuanPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {pendingRequests.length > 0 ? (
+                                {isLeaveRequestsLoading ? (
+                                     [...Array(3)].map((_, i) => (
+                                        <TableRow key={i}>
+                                            <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                                            <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                                            <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                                            <TableCell><Skeleton className="h-5 w-48" /></TableCell>
+                                            <TableCell className="text-center space-x-2"><Skeleton className="h-9 w-24 mx-auto" /></TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : pendingRequests.length > 0 ? (
                                     pendingRequests.map(req => (
                                         <TableRow key={req.id}>
                                             <TableCell>{req.userName}</TableCell>
@@ -164,7 +202,16 @@ export default function PersetujuanPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {historyToday.length > 0 ? (
+                                {isLeaveRequestsLoading ? (
+                                    [...Array(2)].map((_, i) => (
+                                        <TableRow key={i}>
+                                            <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                                            <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                                            <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                                            <TableCell><Skeleton className="h-7 w-24" /></TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : historyToday.length > 0 ? (
                                     historyToday.map(req => (
                                         <TableRow key={req.id}>
                                             <TableCell>{req.userName}</TableCell>

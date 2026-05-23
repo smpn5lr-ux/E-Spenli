@@ -90,7 +90,7 @@ const TableSkeleton = ({ cols }: { cols: number }) => <div className="border rou
 const UserTable = ({ data, canManage, onEdit, onToggleStatus, onDelete }: TableProps) => <Table className="min-w-[1024px]"><TableHeader><TableRow><TableHead className="w-[120px] text-center whitespace-nowrap">Nomor Urut</TableHead><TableHead>Nama</TableHead><TableHead>Email</TableHead><TableHead>Peran</TableHead><TableHead>NIP</TableHead><TableHead className="whitespace-nowrap">Status Kepegawaian</TableHead><TableHead className="text-center">Status Akun</TableHead>{canManage && <TableHead className="text-right"><span className="sr-only">Aksi</span></TableHead>}</TableRow></TableHeader><TableBody>{data.length > 0 ? data.map((user) => (<TableRow key={user.id}><TableCell className="text-center font-medium">{(user.role === 'pegawai' ? user.skNumber : user.sequenceNumber) ?? '-'}</TableCell><TableCell className="font-medium whitespace-nowrap">{user.name}</TableCell><TableCell>{user.email || '-'}</TableCell><TableCell><Badge variant="secondary">{roleConfig[user.role]?.title || user.role}</Badge></TableCell><TableCell>{user.nip || '-'}</TableCell><TableCell>{user.position || '-'}</TableCell><TableCell className="text-center"><Badge variant={user.status === 'Aktif' ? 'default' : 'destructive'}>{user.status}</Badge></TableCell>{canManage && <TableCell className="text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button aria-haspopup="true" size="icon" variant="ghost"><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Toggle menu</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuLabel>Aksi</DropdownMenuLabel><DropdownMenuItem onClick={() => onEdit(user)}>Edit Pengguna</DropdownMenuItem><DropdownMenuItem onClick={() => onToggleStatus(user)}>{user.status === 'Aktif' ? 'Non-aktifkan' : 'Aktifkan'}</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10" onClick={() => onDelete(user)}>Hapus Pengguna</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>}</TableRow>)) : <TableRow><TableCell colSpan={canManage ? 8 : 7} className="h-24 text-center">Tidak ada data pengguna.</TableCell></TableRow>}</TableBody></Table>;
 const AdminTable = ({ data, canManage, onEdit, onToggleStatus, onDelete }: TableProps) => <Table><TableHeader><TableRow><TableHead className="w-[50px] text-center">No.</TableHead><TableHead>Nama</TableHead><TableHead>Email</TableHead><TableHead className="text-center">Status Akun</TableHead>{canManage && <TableHead className="text-right"><span className="sr-only">Aksi</span></TableHead>}</TableRow></TableHeader><TableBody>{data.length > 0 ? data.map((user, index) => (<TableRow key={user.id}><TableCell className="text-center font-medium">{index + 1}</TableCell><TableCell className="font-medium whitespace-nowrap">{user.name}</TableCell><TableCell>{user.email || '-'}</TableCell><TableCell className="text-center"><Badge variant={user.status === 'Aktif' ? 'default' : 'destructive'}>{user.status}</Badge></TableCell>{canManage && <TableCell className="text-right"><DropdownMenu><DropdownMenuTrigger asChild><Button aria-haspopup="true" size="icon" variant="ghost" disabled={user.email === 'admin@sekolah.sch.id'}><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Toggle menu</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuLabel>Aksi</DropdownMenuLabel><DropdownMenuItem onClick={() => onEdit(user)}>Edit Pengguna</DropdownMenuItem><DropdownMenuItem onClick={() => onToggleStatus(user)} disabled={user.email === 'admin@sekolah.sch.id'}>{user.status === 'Aktif' ? 'Non-aktifkan' : 'Aktifkan'}</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10" onClick={() => onDelete(user)} disabled={user.email === 'admin@sekolah.sch.id'}>Hapus Pengguna</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>}</TableRow>)) : <TableRow><TableCell colSpan={canManage ? 5 : 4} className="h-24 text-center">Tidak ada data admin.</TableCell></TableRow>}</TableBody></Table>;
 
-function UsersView({ isAllowed, canManage }: { isAllowed: boolean, canManage: boolean }) {
+function UsersView({ isAllowed, canManage, isPermissionsLoading }: { isAllowed: boolean, canManage: boolean, isPermissionsLoading: boolean }) {
     type UserFilter = 'all' | 'guru' | 'pegawai' | 'kepala_sekolah';
 
     const [userFilter, setUserFilter] = useState<UserFilter>('all');
@@ -108,6 +108,7 @@ function UsersView({ isAllowed, canManage }: { isAllowed: boolean, canManage: bo
     const [isDeleting, setIsDeleting] = useState(false);
 
     const { usersData, isLoading: isUsersLoading } = useUsersWithCache(firestore, isAllowed);
+    const showSkeleton = isPermissionsLoading || isUsersLoading;
 
     useEffect(() => {
         if (usersData) setHeadmasterExists(usersData.some(u => u.role === 'kepala_sekolah'));
@@ -238,8 +239,6 @@ function UsersView({ isAllowed, canManage }: { isAllowed: boolean, canManage: bo
         } finally { setIsDeleting(false); }
     }
 
-    if (!isAllowed) return null;
-
     return (
         <div className="space-y-8">
             <section>
@@ -281,7 +280,7 @@ function UsersView({ isAllowed, canManage }: { isAllowed: boolean, canManage: bo
                     <div className="relative w-full"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input type="search" placeholder="Cari berdasarkan nama..." className="w-full rounded-lg bg-background pl-8" value={userSearch} onChange={(e) => setUserSearch(e.target.value)} /></div>
                 </div>
                 <Card className="w-full">
-                    <CardContent className="p-0">{isUsersLoading ? <TableSkeleton cols={canManage ? 8 : 7} /> : <div className="overflow-x-auto"><UserTable data={filteredUserData} canManage={canManage} onEdit={openEditDialog} onToggleStatus={handleToggleStatus} onDelete={openDeleteDialog} /></div>}</CardContent>
+                    <CardContent className="p-0">{showSkeleton ? <TableSkeleton cols={canManage ? 8 : 7} /> : <div className="overflow-x-auto"><UserTable data={filteredUserData} canManage={canManage} onEdit={openEditDialog} onToggleStatus={handleToggleStatus} onDelete={openDeleteDialog} /></div>}</CardContent>
                 </Card>
             </section>
 
@@ -292,7 +291,7 @@ function UsersView({ isAllowed, canManage }: { isAllowed: boolean, canManage: bo
                 </div>
                 <div className="flex justify-end mb-4"><div className="relative w-full sm:w-[300px]"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input type="search" placeholder="Cari nama admin..." className="w-full rounded-lg bg-background pl-8" value={adminSearch} onChange={(e) => setAdminSearch(e.target.value)} /></div></div>
                 <Card className="w-full">
-                    <CardContent className="p-0">{isUsersLoading ? <TableSkeleton cols={canManage ? 5 : 4} /> : <div className="overflow-x-auto"><AdminTable data={filteredAdminData} canManage={canManage} onEdit={openEditDialog} onToggleStatus={handleToggleStatus} onDelete={openDeleteDialog} /></div>}</CardContent>
+                    <CardContent className="p-0">{showSkeleton ? <TableSkeleton cols={canManage ? 5 : 4} /> : <div className="overflow-x-auto"><AdminTable data={filteredAdminData} canManage={canManage} onEdit={openEditDialog} onToggleStatus={handleToggleStatus} onDelete={openDeleteDialog} /></div>}</CardContent>
                 </Card>
             </section>
 
@@ -345,12 +344,28 @@ export default function AdminUsersPage() {
     }, [isLoadingPage, canView, router, user]);
 
     if (isLoadingPage || !canView) {
-        return <PageWrapper><div className="flex h-full w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></PageWrapper>;
+        // While loading permissions, or if permissions are denied (and we are about to be redirected),
+        // render the skeleton view. This provides a consistent UI until the real data is ready or the page changes,
+        // preventing any flicker.
+        return (
+            <PageWrapper>
+                <UsersView 
+                    isAllowed={false} 
+                    canManage={false} 
+                    isPermissionsLoading={true} 
+                />
+            </PageWrapper>
+        );
     }
 
+    // Only when permissions are fully loaded and access is granted, render the interactive view.
     return (
         <PageWrapper>
-            <UsersView isAllowed={canView} canManage={canManage} />
+            <UsersView 
+                isAllowed={canView} 
+                canManage={canManage} 
+                isPermissionsLoading={isLoadingPage} // This will be false
+            />
         </PageWrapper>
     );
 }
