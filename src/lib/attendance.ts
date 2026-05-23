@@ -195,38 +195,91 @@ export async function fetchUserMonthlyReportData(
     }));
 }
 
-// The rest of the file remains the same.
 
 export async function getDailyStaffAttendanceStats(firestore: Firestore) {
     const today = new Date();
+    const todayStr = format(today, 'yyyy-MM-dd');
+
     const usersQuery = query(collection(firestore, 'users'), where('role', 'in', ['guru', 'pegawai', 'kepala_sekolah']));
     const usersSnap = await getDocs(usersQuery);
     const allStaff = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     const staffIds = allStaff.map(s => s.id);
-    if (staffIds.length === 0) return { totalStaff: 0, hadir: 0, izin: 0, sakit: 0, alpa: 0, pendingLeave: 0, pendingLate: 0 };
-    const attendanceQuery = query(collectionGroup(firestore, 'attendanceRecords'), where('date', '==', format(today, 'yyyy-MM-dd')));
+
+    if (staffIds.length === 0) {
+        return { totalStaff: 0, hadir: 0, izin: 0, sakit: 0, alpa: 0, pendingLeave: 0, pendingLate: 0, totalLate: 0 };
+    }
+
+    const attendanceQuery = query(collectionGroup(firestore, 'attendanceRecords'), where('date', '==', todayStr));
     const leaveQuery = query(collectionGroup(firestore, 'leaveRequests'));
-    const [attendanceSnap, leaveSnap] = await Promise.all([ getDocs(attendanceQuery), getDocs(leaveQuery) ]);
+    const lateSubmissionQuery = query(collectionGroup(firestore, 'lateSubmissions'), where('date', '==', todayStr));
+
+    const [attendanceSnap, leaveSnap, lateSubmissionSnap] = await Promise.all([
+        getDocs(attendanceQuery),
+        getDocs(leaveQuery),
+        getDocs(lateSubmissionQuery)
+    ]);
+
     const presentUserIds = new Set<string>();
     attendanceSnap.forEach(doc => {
         const userId = doc.ref.parent.parent?.id;
-        if (userId && staffIds.includes(userId)) { presentUserIds.add(userId); }
+        if (userId && staffIds.includes(userId)) {
+            presentUserIds.add(userId);
+        }
     });
-    let izinCount = 0, sakitCount = 0;
+
+    let izinCount = 0, sakitCount = 0, pendingLeaveCount = 0;
     const onLeaveUserIds = new Set<string>();
     leaveSnap.forEach(doc => {
         const leave = doc.data() as RawLeaveData;
         const userId = doc.ref.parent.parent?.id;
-        if (userId && staffIds.includes(userId) && leave.status === 'approved') {
-            if (isWithinInterval(today, { start: startOfDay(leave.startDate.toDate()), end: endOfDay(leave.endDate.toDate()) })) {
-                onLeaveUserIds.add(userId);
-                if (leave.type.toLowerCase() === 'sakit') { sakitCount++; } else { izinCount++; }
+
+        if (userId && staffIds.includes(userId)) {
+            const isTodayInLeaveInterval = isWithinInterval(today, {
+                start: startOfDay(leave.startDate.toDate()),
+                end: endOfDay(leave.endDate.toDate())
+            });
+
+            if (isTodayInLeaveInterval) {
+                 if (leave.status === 'approved') {
+                    onLeaveUserIds.add(userId);
+                    if (leave.type.toLowerCase() === 'sakit') {
+                        sakitCount++;
+                    } else {
+                        izinCount++;
+                    }
+                } else if (leave.status === 'pending') {
+                    pendingLeaveCount++;
+                }
             }
         }
     });
+
+    let pendingLateCount = 0;
+    let totalLateCount = 0;
+    lateSubmissionSnap.forEach(doc => {
+        const submission = doc.data();
+        const userId = doc.ref.parent.parent?.id;
+        if (userId && staffIds.includes(userId)) {
+            totalLateCount++;
+            if (submission.status === 'pending') {
+                pendingLateCount++;
+            }
+        }
+    });
+
     const hadirCount = presentUserIds.size;
     const alpaCount = allStaff.filter(user => !presentUserIds.has(user.id) && !onLeaveUserIds.has(user.id)).length;
-    return { totalStaff: allStaff.length, hadir: hadirCount, izin: izinCount, sakit: sakitCount, alpa: alpaCount, pendingLeave: 0, pendingLate: 0 };
+
+    return {
+        totalStaff: allStaff.length,
+        hadir: hadirCount,
+        izin: izinCount,
+        sakit: sakitCount,
+        alpa: alpaCount,
+        pendingLeave: pendingLeaveCount,
+        pendingLate: pendingLateCount,
+        totalLate: totalLateCount
+    };
 }
 
 export async function calculateAttendanceStats(firestore: Firestore, userId: string, currentMonth: Date) {

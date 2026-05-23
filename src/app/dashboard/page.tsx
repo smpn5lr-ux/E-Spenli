@@ -338,11 +338,11 @@ function useMonthlyAttendanceSummary(user: any) {
 }
 
 function useStaffDashboardStats(firestore: any, user: any) {
-  const cacheKey = 'staffDashboardStats_v3';
+  const cacheKey = 'staffDashboardStats_v4'; // Cache version updated
   const [stats, setStats] = useState<any>(() => getFromCache(cacheKey) || null);
   const [isLoading, setIsLoading] = useState(stats === null);
 
-  const defaultStats = useMemo(() => ({ totalStaff: 0, hadir: 0, izin: 0, sakit: 0, alpa: 0, pendingLeave: 0, pendingLate: 0 }), []);
+  const defaultStats = useMemo(() => ({ totalStaff: 0, hadir: 0, izin: 0, sakit: 0, alpa: 0, pendingLeave: 0, pendingLate: 0, totalLate: 0 }), []);
 
   useEffect(() => {
     if (!firestore || !user) return;
@@ -391,9 +391,9 @@ const HeadmasterDashboard = ({ user, router }: any) => {
             />
             <StatCard 
                 title="Persetujuan Terlambat"
-                value={stats.pendingLate}
+                value={`${stats.pendingLate} / ${stats.totalLate}`}
                 icon={Clock4}
-                description="Pengajuan keterangan terlambat"
+                description="Pengajuan menunggu dari total"
                 isLoading={isStatsLoading} 
                 className="cursor-pointer transition-colors bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))] hover:bg-opacity-90"
                 onClick={() => router.push('/dashboard/terlambat/persetujuan')}
@@ -413,7 +413,14 @@ const AdminDashboard = ({ user, router }: any) => {
             <StatCard title="Total Hadir Hari Ini" value={stats.hadir} icon={UserCheck} isLoading={isStatsLoading} className="bg-[hsl(var(--card-green-bg))] text-[hsl(var(--card-green-fg))]" />
             <StatCard title="Total Izin/Sakit Hari Ini" value={stats.izin + stats.sakit} icon={BookUser} description={`${stats.izin} Izin, ${stats.sakit} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
             <StatCard title="Menunggu Persetujuan" value={stats.pendingLeave} icon={MailWarning} isLoading={isStatsLoading} className="bg-[hsl(var(--card-blue-bg))] text-[hsl(var(--card-blue-fg))]" />
-             <StatCard title="Persetujuan Terlambat" value={stats.pendingLate} icon={Clock4} isLoading={isStatsLoading} className="bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))]" />
+            <StatCard 
+                title="Persetujuan Terlambat" 
+                value={`${stats.pendingLate} / ${stats.totalLate}`}
+                description="Pengajuan menunggu dari total"
+                icon={Clock4} 
+                isLoading={isStatsLoading} 
+                className="bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))]" 
+            />
             <StatCard title="Total Alpa Hari Ini" value={stats.alpa} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
             <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4"><TodaysActivityTable /></div>
             <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4"><AbsentUsersTable /></div>
