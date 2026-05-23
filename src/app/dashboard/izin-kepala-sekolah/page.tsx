@@ -40,12 +40,6 @@ interface LeaveRequest {
   proofUrl?: string | null;
 }
 
-const statusVariant: { [key: string]: 'default' | 'secondary' | 'destructive' | 'outline' } = {
-    Menunggu: 'outline',
-    Disetujui: 'default',
-    Ditolak: 'destructive',
-};
-
 // --- Main Component ---
 export default function IzinKepsekPage() {
   const { user, isUserLoading } = useUser();
@@ -57,7 +51,6 @@ export default function IzinKepsekPage() {
 
   const cacheKey = 'pending_leave_requests';
 
-  // Fetch user data for names
   const usersCollectionRef = useMemo(() => firestore ? collection(firestore, 'users') : null, [firestore]);
   const { data: users, isLoading: isUsersLoading } = useCollection(user, usersCollectionRef);
 
@@ -118,10 +111,10 @@ export default function IzinKepsekPage() {
   }, [firestore, user, userMap, toast]);
 
   useEffect(() => {
-    if (!isUsersLoading) {
+    if (!isUserLoading && !isUsersLoading) {
         fetchPendingRequests();
     }
-  }, [isUsersLoading, fetchPendingRequests]);
+  }, [isUserLoading, isUsersLoading, fetchPendingRequests]);
 
   const handleRefresh = () => {
       invalidateCache(cacheKey);
@@ -138,7 +131,6 @@ export default function IzinKepsekPage() {
       await updateDoc(leaveRequestRef, { status: newStatus });
       toast({ title: 'Status Berhasil Diperbarui', description: `Pengajuan telah di-${newStatus.toLowerCase()}.` });
       
-      // Optimistically update UI
       setLeaveRequests(prev => prev.filter(req => req.id !== leaveId));
       invalidateCache(cacheKey);
 
@@ -151,13 +143,23 @@ export default function IzinKepsekPage() {
         setIsProcessing(prev => ({ ...prev, [leaveId]: false }));
     }
   };
-
-  if (isLoading || isUsersLoading) {
-    return <div className="flex h-screen items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
+  
+  if (isUserLoading) { 
+      return (
+          <PageWrapper>
+              <div className="flex h-full items-center justify-center pt-32">
+                  <Loader2 className="h-12 w-12 animate-spin text-primary" />
+              </div>
+          </PageWrapper>
+      );
   }
 
   if (user?.role !== 'kepala_sekolah') {
-      return <div className="text-center py-10">Halaman ini hanya dapat diakses oleh Kepala Sekolah.</div>
+      return (
+          <PageWrapper>
+              <div className="text-center py-10">Halaman ini hanya dapat diakses oleh Kepala Sekolah.</div>
+          </PageWrapper>
+      );
   }
 
   return (
@@ -189,7 +191,7 @@ export default function IzinKepsekPage() {
                   </TableHeader>
                   <TableBody>
                       {isLoading ? (
-                          <TableRow><TableCell colSpan={6} className="h-64 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /><p className="mt-2">Memuat Pengajuan...</p></TableCell></TableRow>
+                          <TableRow><TableCell colSpan={6} className="h-24 text-center">Memuat Data...</TableCell></TableRow>
                       ) : leaveRequests.length > 0 ? (
                           leaveRequests.map((req) => (
                               <TableRow key={req.id}>
@@ -205,7 +207,7 @@ export default function IzinKepsekPage() {
                                         onClick={() => handleRequestUpdate(req.userId, req.id, 'Disetujui')}
                                         disabled={isProcessing[req.id]}
                                     >
-                                        {isProcessing[req.id] && isProcessing[req.id] === true ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4" />}
+                                        {isProcessing[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4" />}
                                         <span className="ml-2">Setujui</span>
                                     </Button>
                                     <Button 
@@ -214,7 +216,7 @@ export default function IzinKepsekPage() {
                                         onClick={() => handleRequestUpdate(req.userId, req.id, 'Ditolak')}
                                         disabled={isProcessing[req.id]}
                                     >
-                                        {isProcessing[req.id] && isProcessing[req.id] === true ? <Loader2 className="h-4 w-4 animate-spin"/> : <X className="h-4 w-4" />}
+                                        {isProcessing[req.id] ? <Loader2 className="h-4 w-4 animate-spin"/> : <X className="h-4 w-4" />}
                                          <span className="ml-2">Tolak</span>
                                     </Button>
                                     {req.proofUrl && 
