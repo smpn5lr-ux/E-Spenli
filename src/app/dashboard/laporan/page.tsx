@@ -140,7 +140,7 @@ export default function LaporanPage() {
                                       <TableCell className="text-center">{index + 1}</TableCell>
                                       <TableCell className="font-medium whitespace-nowrap">{record.dateString}</TableCell>
                                       <TableCell className="text-center">{record.checkInTime}</TableCell>
-                                      <TableCell className="text-center">{record.checkOutTimae}</TableCell>
+                                      <TableCell className="text-center">{record.checkOutTime}</TableCell>
                                       <TableCell>
                                         <Badge variant={coreStatusToVariant[record.status] || 'default'}>
                                           {record.status}
