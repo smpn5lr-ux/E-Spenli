@@ -84,15 +84,17 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
                 setSchoolConfig(config);
                 const reportData: MonthlyReportData[] = await fetchUserMonthlyReportData(firestore, user.uid, month, config, {});
                 
-                // FIX: Map and parse data to match ProblematicDay type
                 const problems: ProblematicDay[] = reportData
                     .filter(d => 
                         d.status === 'Alpa' || 
-                        d.description === 'Tidak Absen Pulang' ||
-                        d.description === 'Tidak Absen Masuk'
+                        d.keterangan === 'Tidak Absen Pulang' ||
+                        d.keterangan === 'Tidak Absen Masuk'
                     )
                     .map(d => ({
-                        ...d,
+                        id: d.id,
+                        date: d.date,
+                        status: d.status,
+                        description: d.keterangan, // Map keterangan to description
                         checkInTime: d.checkInTime ? parseISO(d.checkInTime) : null,
                         checkOutTime: d.checkOutTime ? parseISO(d.checkOutTime) : null,
                     }));
