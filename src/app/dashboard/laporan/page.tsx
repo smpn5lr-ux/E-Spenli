@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import { useUser, useFirestore, useDoc } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import { format, isSameMonth, addMonths, subMonths, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
@@ -34,11 +34,14 @@ export default function LaporanPage() {
   const [isReportLoading, setIsReportLoading] = useState(true);
 
   const schoolConfigRef = useMemo(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
+  const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
+
   const { data: schoolConfig, isLoading: isConfigLoading } = useDoc(user, schoolConfigRef);
+  const { data: userData, isLoading: isUserDataLoading } = useDoc<{ role: string }>(user, userDocRef);
 
   const fetchReport = useCallback(async () => {
-    if (!firestore || !user || !schoolConfig) {
-        if (!isAuthLoading && !isConfigLoading) setIsReportLoading(false);
+    if (!firestore || !user || !schoolConfig || !userData) {
+        if (!isAuthLoading && !isConfigLoading && !isUserDataLoading) setIsReportLoading(false);
         return;
     }
     setIsReportLoading(true);
@@ -57,7 +60,7 @@ export default function LaporanPage() {
     } finally {
         setIsReportLoading(false);
     }
-  }, [firestore, user, schoolConfig, currentMonth, isAuthLoading, isConfigLoading, toast]);
+  }, [firestore, user, schoolConfig, userData, currentMonth, isAuthLoading, isConfigLoading, isUserDataLoading, toast]);
 
   useEffect(() => {
     fetchReport();
@@ -68,18 +71,47 @@ export default function LaporanPage() {
       fetchReport();
   }, [fetchReport, toast]);
 
-  const handlePrevMonth = () => setCurrentMonth(prev => subMonths(prev, 1));
+  const canViewPreviousMonths = useMemo(() => {
+    if (!userData) return false;
+    return userData.role === 'admin' || userData.role === 'kepala_sekolah';
+  }, [userData]);
+
+  const handlePrevMonth = () => {
+    if (canViewPreviousMonths) {
+      setCurrentMonth(prev => subMonths(prev, 1));
+    } else {
+      toast({
+        title: "Akses Terbatas",
+        description: "Silakan hubungi admin atau kepala sekolah untuk melihat laporan sebelumnya.",
+      });
+    }
+  };
+  
   const handleNextMonth = () => setCurrentMonth(prev => addMonths(prev, 1));
 
-  const isLoading = isAuthLoading || isConfigLoading;
+  const isLoading = isAuthLoading || isConfigLoading || isUserDataLoading;
 
   if (isLoading) {
     return (
         <PageWrapper>
-            <div className="p-6 space-y-4">
-                <Skeleton className="h-10 w-1/2" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-64 w-full" />
+            <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                    <div>
+                        <Skeleton className="h-8 w-64 mb-2" />
+                        <Skeleton className="h-4 w-96" />
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Skeleton className="h-10 w-10" />
+                    <Skeleton className="h-6 w-40" />
+                    <Skeleton className="h-10 w-10" />
+                    <Skeleton className="h-10 w-10 ml-auto" />
+                </div>
+                <Card>
+                    <CardContent className="p-0">
+                         <Table><TableHeader><TableRow>{Array.from({ length: 6 }).map((_, i) => <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>)}</TableRow></TableHeader><TableBody><TableRow><TableCell colSpan={6} className="h-96"><div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></TableCell></TableRow></TableBody></Table>
+                    </CardContent>
+                </Card>
             </div>
         </PageWrapper>
     );
@@ -107,7 +139,7 @@ export default function LaporanPage() {
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             {isReportLoading && monthlyReportData.length === 0 ? (
-                <div className="p-4 space-y-3 min-h-96 flex items-center justify-center">
+                <div className="p-4 min-h-96 flex items-center justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
             ) : (
