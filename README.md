@@ -108,7 +108,7 @@ Setelah langkah-langkah ini selesai, aplikasi akan dapat mengakses kunci API den
    ```
 3. Buka `http://localhost:3000`.
 
-Tanpa `GEMINI_API_KEY`, kutipan absensi tetap berfungsi memakai daftar manual di server.
+**Catatan**: Tanpa `GEMINI_API_KEY`, kutipan absensi tetap berfungsi memakai daftar kutipan manual yang ada di dalam server.
 
 ## Instal sebagai PWA
 
