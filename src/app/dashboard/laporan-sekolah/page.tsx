@@ -17,13 +17,14 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import EditAttendanceModal from '@/components/modals/EditAttendanceModal';
 import * as XLSX from 'xlsx';
 import type { jsPDF } from "jspdf";
 import { calculateAttendanceStats, fetchUserMonthlyReportData } from '@/lib/attendance';
+import { PageWrapper } from '@/components/layout/page-wrapper';
 
 interface ReportRowData {
     no: number;
@@ -354,46 +355,54 @@ export default function SchoolReportPage() {
     const handleCloseModal = () => { setIsEditModalOpen(false); setEditingUser(null); setRefetchIndex(prev => prev + 1); };
     const isLoading = isReportLoading || isUserLoading || isConfigLoading;
 
-    if (isUserLoading) return <div className="p-6"><Skeleton className="h-40 w-full" /></div>;
+    if (isUserLoading) return <PageWrapper><div className="p-6"><Skeleton className="h-40 w-full" /></div></PageWrapper>;
     if (!user) return null;
-    if (!['admin', 'kepala_sekolah'].includes(user.role)) return <div className="p-4"><Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Akses Ditolak</AlertTitle><AlertDescription>Anda tidak memiliki izin untuk mengakses halaman ini.</AlertDescription></Alert></div>;
+    if (!['admin', 'kepala_sekolah'].includes(user.role)) return <PageWrapper><div className="p-4"><Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Akses Ditolak</AlertTitle><AlertDescription>Anda tidak memiliki izin untuk mengakses halaman ini.</AlertDescription></Alert></div></PageWrapper>;
 
     return (
-        <div className="flex-1 min-w-0 p-2 pt-0 pb-24 md:p-6 md:pt-8">
+        <PageWrapper>
             {isEditModalOpen && editingUser && (
                 <EditAttendanceModal user={editingUser} month={currentMonth} isOpen={isEditModalOpen} onClose={handleCloseModal} currentUser={user} />
             )}
-            <Card>
-                <CardHeader> <CardTitle>Laporan Ringkasan Kehadiran</CardTitle> <CardDescription>Ringkasan kehadiran bulanan untuk seluruh personil sekolah.</CardDescription> </CardHeader>
-                <CardContent>
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-                        <div className="flex items-center gap-2">
-                            <Button variant="outline" size="icon" onClick={() => changeMonth(-1)} disabled={currentMonth.getFullYear() === 2026 && currentMonth.getMonth() === 0}>
-                                <ChevronLeft className="h-4 w-4" />
-                            </Button>
-                            <span className="w-36 text-center font-semibold">{monthName}</span>
-                            <Button variant="outline" size="icon" onClick={() => changeMonth(1)} disabled={currentMonth.getMonth() === new Date().getMonth() && currentMonth.getFullYear() === new Date().getFullYear()}>
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
-                            <Button variant="outline" size="icon" onClick={() => setRefetchIndex(prev => prev + 1)} disabled={isLoading} aria-label="Muat Ulang Data">
-                                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                            </Button>
-                        </div>
-                        <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                            <Select value={roleFilter} onValueChange={setRoleFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter berdasarkan peran" /></SelectTrigger><SelectContent><SelectItem value="all">Semua Peran</SelectItem><SelectItem value="guru">Guru</SelectItem><SelectItem value="pegawai">Pegawai</SelectItem><SelectItem value="kepala_sekolah">Kepala Sekolah</SelectItem></SelectContent></Select>
-                            <Input type="search" placeholder="Cari berdasarkan nama..." className="w-full sm:w-[250px]" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                            {user.role === 'admin' && (
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild><Button><Download className="mr-2 h-4 w-4" />Unduh & Sinkron</Button></DropdownMenuTrigger>
-                                    <DropdownMenuContent>
-                                        <DropdownMenuItem onClick={handleDownloadExcel}><FileSpreadsheet className="mr-2 h-4 w-4"/>Unduh Excel</DropdownMenuItem>
-                                        <DropdownMenuItem onClick={handleDownloadPdf}><FileText className="mr-2 h-4 w-4"/>Unduh PDF</DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            )}
-                        </div>
-                    </div>
-                    <div className="overflow-x-auto border rounded-md">
+            
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight">Laporan Ringkasan Kehadiran</h1>
+                    <p className="text-muted-foreground">Ringkasan kehadiran bulanan untuk seluruh personil sekolah.</p>
+                </div>
+                {user.role === 'admin' && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild><Button><Download className="mr-2 h-4 w-4" />Unduh Laporan</Button></DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                            <DropdownMenuItem onClick={handleDownloadExcel}><FileSpreadsheet className="mr-2 h-4 w-4"/>Unduh Excel</DropdownMenuItem>
+                            <DropdownMenuItem onClick={handleDownloadPdf}><FileText className="mr-2 h-4 w-4"/>Unduh PDF</DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="icon" onClick={() => changeMonth(-1)} disabled={currentMonth.getFullYear() === 2026 && currentMonth.getMonth() === 0}>
+                        <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="w-36 text-center font-semibold">{monthName}</span>
+                    <Button variant="outline" size="icon" onClick={() => changeMonth(1)} disabled={currentMonth.getMonth() === new Date().getMonth() && currentMonth.getFullYear() === new Date().getFullYear()}>
+                        <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="icon" onClick={() => setRefetchIndex(prev => prev + 1)} disabled={isLoading} aria-label="Muat Ulang Data">
+                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    </Button>
+                </div>
+                <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                    <Select value={roleFilter} onValueChange={setRoleFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter berdasarkan peran" /></SelectTrigger><SelectContent><SelectItem value="all">Semua Peran</SelectItem><SelectItem value="guru">Guru</SelectItem><SelectItem value="pegawai">Pegawai</SelectItem><SelectItem value="kepala_sekolah">Kepala Sekolah</SelectItem></SelectContent></Select>
+                    <Input type="search" placeholder="Cari berdasarkan nama..." className="w-full sm:w-[250px]" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                </div>
+            </div>
+
+            <Card className="w-full">
+                <CardContent className="p-0">
+                    <div className="overflow-x-auto">
                          {isLoading ? (
                             <div className="p-4 space-y-3">{[...Array(15)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
                         ) : (
@@ -461,6 +470,6 @@ export default function SchoolReportPage() {
                     </div>
                 </CardContent>
             </Card>
-        </div>
+        </PageWrapper>
     );
 }

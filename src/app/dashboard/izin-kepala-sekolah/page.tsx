@@ -4,9 +4,6 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import {
   Table,
@@ -21,8 +18,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Check, X, RefreshCw, Eye } from 'lucide-react';
 import { useUser, useFirestore, useCollection, FirestorePermissionError, errorEmitter } from '@/firebase';
-import { collection, collectionGroup, query, where, getDocs, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { format, parseISO } from 'date-fns';
+import { collection, collectionGroup, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { getFromCache, setInCache, invalidateCache } from '@/lib/cache';
 import { PageWrapper } from '@/components/layout/page-wrapper';
@@ -144,7 +141,7 @@ export default function IzinKepsekPage() {
     }
   };
   
-  if (isUserLoading) { 
+  if (isUserLoading) {
       return (
           <PageWrapper>
               <div className="flex h-full items-center justify-center pt-32">
@@ -164,43 +161,42 @@ export default function IzinKepsekPage() {
 
   return (
     <PageWrapper>
-      <Card>
-        <CardHeader className="border-b">
-            <div className="flex items-center justify-between">
-                <div>
-                    <CardTitle>Persetujuan Izin</CardTitle>
-                    <CardDescription>Tinjau dan proses pengajuan izin dari guru dan pegawai.</CardDescription>
-                </div>
-                <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
-                    <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                </Button>
+        <div className="flex items-center justify-between mb-6">
+            <div>
+                <h1 className="text-2xl font-bold tracking-tight">Persetujuan Izin</h1>
+                <p className="text-muted-foreground">Tinjau dan proses pengajuan izin dari guru dan pegawai.</p>
             </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="border-t overflow-x-auto">
-              <Table className="min-w-[1000px]">
-                  <TableHeader>
-                      <TableRow>
-                          <TableHead>Nama</TableHead>
-                          <TableHead>Jabatan</TableHead>
-                          <TableHead>Jenis Izin</TableHead>
-                          <TableHead>Tanggal</TableHead>
-                          <TableHead>Alasan</TableHead>
-                          <TableHead className="text-center">Aksi</TableHead>
-                      </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                      {isLoading ? (
-                          <TableRow><TableCell colSpan={6} className="h-24 text-center">Memuat Data...</TableCell></TableRow>
-                      ) : leaveRequests.length > 0 ? (
-                          leaveRequests.map((req) => (
-                              <TableRow key={req.id}>
-                                  <TableCell className="font-medium whitespace-nowrap">{req.userName}</TableCell>
-                                  <TableCell className="capitalize">{req.userRole}</TableCell>
-                                  <TableCell><Badge variant="secondary">{req.type}</Badge></TableCell>
-                                  <TableCell>{req.startDate}</TableCell>
-                                  <TableCell className="max-w-xs truncate" title={req.reason}>{req.reason}</TableCell>
-                                  <TableCell className="text-center space-x-2 whitespace-nowrap">
+            <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+        </div>
+
+        <Card className="w-full">
+            <CardContent className="p-0">
+            <div className="overflow-x-auto">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-[200px]">Nama</TableHead>
+                            <TableHead className="w-[150px]">Jabatan</TableHead>
+                            <TableHead className="w-[150px]">Jenis Izin</TableHead>
+                            <TableHead className="w-[250px]">Tanggal</TableHead>
+                            <TableHead>Alasan</TableHead>
+                            <TableHead className="text-center w-[250px]">Aksi</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {isLoading ? (
+                            <TableRow><TableCell colSpan={6} className="h-24 text-center">Memuat Data...</TableCell></TableRow>
+                        ) : leaveRequests.length > 0 ? (
+                            leaveRequests.map((req) => (
+                                <TableRow key={req.id}>
+                                    <TableCell className="font-medium whitespace-nowrap">{req.userName}</TableCell>
+                                    <TableCell className="capitalize">{req.userRole}</TableCell>
+                                    <TableCell><Badge variant="secondary">{req.type}</Badge></TableCell>
+                                    <TableCell>{req.startDate}</TableCell>
+                                    <TableCell className="max-w-xs truncate" title={req.reason}>{req.reason}</TableCell>
+                                    <TableCell className="text-center space-x-2 whitespace-nowrap">
                                     <Button 
                                         size="sm" 
                                         variant="default"
@@ -227,15 +223,15 @@ export default function IzinKepsekPage() {
                                         </Button>
                                     }
                                   </TableCell>
-                              </TableRow>
-                          ))
-                      ) : (
-                          <TableRow><TableCell colSpan={6} className="h-24 text-center">Tidak ada pengajuan izin yang menunggu persetujuan.</TableCell></TableRow>
-                      )}
-                  </TableBody>
-              </Table>
-          </div>
-        </CardContent>
+                                </TableRow>
+                            ))
+                        ) : (
+                            <TableRow><TableCell colSpan={6} className="h-24 text-center">Tidak ada pengajuan izin yang menunggu persetujuan.</TableCell></TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
+            </CardContent>
       </Card>
     </PageWrapper>
   );
