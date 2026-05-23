@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Table,
   TableHeader,
@@ -18,8 +18,8 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useFirestore } from '@/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { isWithinInterval, format } from 'date-fns';
+import { collection, query, where, getDocs, collectionGroup } from 'firebase/firestore';
+import { startOfDay, endOfDay, format } from 'date-fns';
 import { Loader2, UserCheck, AlertCircle } from 'lucide-react';
 
 interface AbsentUser {
@@ -27,7 +27,7 @@ interface AbsentUser {
   name: string;
   nip: string;
   position: string;
-  status: 'Alpa' | 'Menunggu Persetujuan' | 'Izin' | 'Sakit';
+  status: 'Alpa' | 'Terlambat' | 'Izin' | 'Sakit';
 }
 
 interface UserData {
@@ -55,72 +55,67 @@ const AbsentUsersTable = () => {
       setIsLoading(true);
       setError(null);
       try {
-        const today = new Date();
-        const todayStr = format(today, 'yyyy-MM-dd');
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
 
         const usersQuery = query(collection(firestore, 'users'), where('role', 'in', ['guru', 'pegawai', 'kepala_sekolah']));
         const usersSnap = await getDocs(usersQuery);
         const allStaff: UserData[] = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData));
+        const allStaffIds = allStaff.map(user => user.id);
 
         const presentUserIds = new Set<string>();
-        const onLeaveOrPendingUserIds = new Map<string, {
-            status: 'approved' | 'pending';
-            type: 'sakit' | 'izin' | string;
-        }>();
+        const onLeaveUserIds = new Set<string>();
+        const pendingLateUserIds = new Set<string>();
 
-        await Promise.all(allStaff.map(async (user) => {
-          try {
-            const attendanceQ = query(collection(firestore, 'users', user.id, 'attendanceRecords'), where('date', '==', todayStr));
-            const attendanceSnap = await getDocs(attendanceQ);
-            if (!attendanceSnap.empty) {
-              presentUserIds.add(user.id);
+        // 1. Get users with an attendance record today (checked in OR checked out)
+        const attendanceQuery = query(collectionGroup(firestore, 'attendanceRecords'), where('date', '==', todayStr));
+        const attendanceSnap = await getDocs(attendanceQuery);
+        attendanceSnap.forEach(doc => {
+            const userId = doc.ref.parent.parent?.id;
+            if(userId && allStaffIds.includes(userId)) {
+                presentUserIds.add(userId);
             }
+        });
 
-            const leaveQ = query(collection(firestore, 'users', user.id, 'leaveRequests'));
-            const leaveSnap = await getDocs(leaveQ);
-            leaveSnap.forEach(doc => {
-              const leave = doc.data();
-              const startDate = leave.startDate?.toDate?.();
-              const endDate = leave.endDate?.toDate?.();
-              if (startDate && endDate && isWithinInterval(today, { start: startDate, end: endDate })) {
-                if (!onLeaveOrPendingUserIds.has(user.id) || leave.status === 'approved') {
-                  onLeaveOrPendingUserIds.set(user.id, { status: leave.status, type: leave.type || 'izin' });
-                }
-              }
-            });
+        // 2. Get users with an APPROVED late submission (they are considered present)
+        const approvedLateQuery = query(collectionGroup(firestore, 'lateSubmissions'), where('date', '==', todayStr), where('status', '==', 'approved'));
+        const approvedLateSnap = await getDocs(approvedLateQuery);
+        approvedLateSnap.forEach(doc => {
+            const userId = doc.ref.parent.parent?.id;
+            if (userId && allStaffIds.includes(userId)) {
+                presentUserIds.add(userId);
+            }
+        });
 
-            const lateQ = query(collection(firestore, 'users', user.id, 'lateSubmissions'), where('date', '==', todayStr));
-            const lateSnap = await getDocs(lateQ);
-            lateSnap.forEach(doc => {
-              const sub = doc.data();
-              const status = sub.status;
-              if (status === 'approved') {
-                presentUserIds.add(user.id);
-              } else if (status === 'pending') {
-                if (!onLeaveOrPendingUserIds.has(user.id) || onLeaveOrPendingUserIds.get(user.id)!.status !== 'approved') {
-                  onLeaveOrPendingUserIds.set(user.id, { status: 'pending', type: 'terlambat' });
-                }
-              }
-            });
-          } catch (err) {
-            console.error('Error fetching per-user data for', user.id, err);
-          }
-        }));
+        // 3. Get users on approved leave
+        const todayStart = startOfDay(new Date());
+        const leaveQuery = query(collectionGroup(firestore, 'leaveRequests'), where('status', '==', 'approved'), where('startDate', '>=', todayStart));
+        const leaveSnap = await getDocs(leaveQuery);
+        leaveSnap.forEach(doc => {
+            const leave = doc.data();
+            const userId = doc.ref.parent.parent?.id;
+            const startDate = leave.startDate?.toDate();
+            if (userId && allStaffIds.includes(userId) && startDate <= endOfDay(new Date())) {
+                onLeaveUserIds.add(userId);
+            }
+        });
+
+        // 4. Get users with a PENDING late submission to mark them as 'Terlambat'
+        const pendingLateQuery = query(collectionGroup(firestore, 'lateSubmissions'), where('date', '==', todayStr), where('status', '==', 'pending'));
+        const pendingLateSnap = await getDocs(pendingLateQuery);
+        pendingLateSnap.forEach(doc => {
+             const userId = doc.ref.parent.parent?.id;
+             if (userId && allStaffIds.includes(userId)) {
+                pendingLateUserIds.add(userId);
+             }
+        });
 
         const usersToDisplay = allStaff
-          .filter(user => !presentUserIds.has(user.id))
+          // Filter out users who are present or on leave
+          .filter(user => !presentUserIds.has(user.id) && !onLeaveUserIds.has(user.id))
           .map((user, index) => {
-            const leaveInfo = onLeaveOrPendingUserIds.get(user.id);
-            let status: AbsentUser['status'] = 'Alpa';
-
-            if (leaveInfo) {
-              if (leaveInfo.status === 'approved') {
-                status = leaveInfo.type === 'sakit' ? 'Sakit' : 'Izin';
-              } else if (leaveInfo.status === 'pending') {
-                status = 'Menunggu Persetujuan';
-              }
-            }
-
+            // If user has a pending late submission, mark as 'Terlambat', otherwise 'Alpa'
+            let status: AbsentUser['status'] = pendingLateUserIds.has(user.id) ? 'Terlambat' : 'Alpa';
+            
             return {
               no: index + 1,
               name: user.name,
@@ -129,22 +124,22 @@ const AbsentUsersTable = () => {
               status,
             };
           })
-          .sort((a, b) => a.name.localeCompare(b.name));
+          .sort((a, b) => {
+             if (a.status === 'Alpa' && b.status !== 'Alpa') return 1;
+             if (a.status !== 'Alpa' && b.status === 'Alpa') return -1;
+             return a.name.localeCompare(b.name);
+          });
 
         setAbsentUsers(usersToDisplay);
 
       } catch (e: any) {
         console.error("Error finding absent users:", e);
         const msg = e?.message || String(e);
-        // try to extract an index creation URL from the error message
         const m = msg.match(/https?:\/\/[^\s)]+/);
-        if (m) {
-          setIndexUrl(m[0]);
-        }
-        const extra = e.code ? ` [code: ${e.code}]` : '';
-        const baseError = `Gagal memuat daftar staf tidak hadir. Error: ${msg}${extra}`;
-        if (e.code === 'failed-precondition') {
-          setError(`${baseError}. Database memerlukan indeks. ${m ? 'Klik link di bawah untuk membuatnya.' : 'Lihat log konsol untuk detail.'}`);
+        if (m) setIndexUrl(m[0]);
+        const baseError = `Gagal memuat daftar staf. Error: ${e.code || e.message}`;
+         if (e.code === 'failed-precondition') {
+          setError(`${baseError}. Database memerlukan indeks. Klik link di bawah untuk membuatnya.`);
         } else {
           setError(baseError);
         }
@@ -163,31 +158,24 @@ const AbsentUsersTable = () => {
         <div className="flex flex-col items-center justify-center h-40 text-destructive text-center px-4">
           <AlertCircle className="h-8 w-8 mb-3" />
           <span className="mb-2">{error}</span>
-          {indexUrl ? (
-            <button onClick={() => window.open(indexUrl, '_blank')} className="text-sm underline text-red-600">
-              Buka Panduan Pembuatan Indeks di Firebase Console
-            </button>
-          ) : null}
+          {indexUrl && <button onClick={() => window.open(indexUrl, '_blank')} className="text-sm underline text-red-600">Buka Panduan Pembuatan Indeks</button>}
         </div>
       )
-      return <div className="flex flex-col items-center justify-center h-40 text-muted-foreground"><UserCheck className="h-8 w-8 mb-3" /><span>Semua staf hadir atau memiliki izin yang disetujui.</span></div>;
+      return <div className="flex flex-col items-center justify-center h-40 text-muted-foreground"><UserCheck className="h-8 w-8 mb-3" /><span>Semua staf sudah tercatat hadir atau memiliki izin.</span></div>;
   }
 
-  const getBadgeVariant = (status: AbsentUser['status']) => {
-      switch(status) {
-          case 'Alpa': return 'destructive';
-          case 'Sakit': return 'secondary';
-          case 'Izin': return 'default';
-          case 'Menunggu Persetujuan': return 'outline';
-          default: return 'secondary';
-      }
-  }
+  const badgeVariants = useMemo(() =>({
+      Alpa: 'destructive',
+      Terlambat: 'secondary',
+      Izin: 'default',
+      Sakit: 'default'
+  }), []);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Daftar Staf Tidak Hadir Hari Ini</CardTitle>
-        <CardDescription>Staf yang tidak memiliki catatan kehadiran dan izinnya belum disetujui.</CardDescription>
+        <CardTitle>Staf Belum Tercatat Hadir</CardTitle>
+        <CardDescription>Daftar staf yang belum melakukan absensi masuk dan tidak memiliki izin.</CardDescription>
       </CardHeader>
       <CardContent>
         {absentUsers.length > 0 ? (
@@ -210,7 +198,7 @@ const AbsentUsersTable = () => {
                   </TableCell>
                   <TableCell>{user.position}</TableCell>
                   <TableCell>
-                    <Badge variant={getBadgeVariant(user.status)}>
+                    <Badge variant={badgeVariants[user.status] as any || 'secondary'}>
                         {user.status}
                     </Badge>
                   </TableCell>

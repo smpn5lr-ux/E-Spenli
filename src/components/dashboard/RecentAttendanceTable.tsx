@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Table,
   TableHeader,
@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore } from '@/firebase';
-import { collectionGroup, query, where, getDocs, doc, getDoc, DocumentData, orderBy } from 'firebase/firestore';
+import { collectionGroup, query, where, getDocs, doc, getDoc, DocumentData } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { id as indonesiaLocale } from 'date-fns/locale';
 import { Loader2, WifiOff, AlertCircle, RefreshCw } from 'lucide-react';
@@ -32,7 +32,8 @@ interface Activity {
   checkInTime: string;
   checkOutTime: string;
   rawCheckInTime: Date | null;
-  status: 'Hadir' | 'Pulang';
+  rawCheckOutTime: Date | null;
+  status: 'Hadir' | 'Pulang' | 'Terlambat';
   keterangan: string;
 }
 
@@ -43,11 +44,6 @@ const RecentAttendanceTable = () => {
   const [error, setError] = useState<string | null>(null);
   const firestore = useFirestore();
   const { toast } = useToast();
-
-  const activitiesRef = useRef(activities);
-  useEffect(() => {
-    activitiesRef.current = activities;
-  });
 
   const fetchActivities = useCallback(async (isManualRefresh = false) => {
     if (!firestore) {
@@ -66,21 +62,25 @@ const RecentAttendanceTable = () => {
       const todayStr = format(new Date(), 'yyyy-MM-dd');
       const attendanceQuery = query(
         collectionGroup(firestore, 'attendanceRecords'),
-        where('date', '==', todayStr),
-        orderBy('checkInTime', 'asc') // Urutkan berdasarkan jam masuk (paling pagi dulu)
+        where('date', '==', todayStr)
       );
 
       const snapshot = await getDocs(attendanceQuery);
+      if (snapshot.empty && !isManualRefresh) {
+        setStatus('success');
+        setActivities([]);
+        return;
+      }
+
       const rawActivities: any[] = [];
       const userIdsToFetch = new Set<string>();
 
       snapshot.docs.forEach(docSnapshot => {
         const attendanceData = docSnapshot.data();
-        // Hanya tampilkan yang sudah absen masuk
-        if (attendanceData.checkInTime) {
-          const userId = docSnapshot.ref.parent.parent?.id;
+        const userId = docSnapshot.ref.parent.parent?.id;
+        if (userId) {
           rawActivities.push({ ...attendanceData, id: docSnapshot.id, userId });
-          if (!attendanceData.userName && userId) {
+          if (!attendanceData.userName) {
             userIdsToFetch.add(userId);
           }
         }
@@ -102,39 +102,49 @@ const RecentAttendanceTable = () => {
         const name = attendanceData.userName || userData?.name;
         const nip = attendanceData.userNip || userData?.nip;
         const checkInDate = attendanceData.checkInTime?.toDate() ?? null;
+        const checkOutDate = attendanceData.checkOutTime?.toDate() ?? null;
+
+        let status: Activity['status'] = 'Hadir';
+        let keterangan = attendanceData.description || 'Masih di tempat';
+
+        if (checkOutDate) {
+          status = 'Pulang';
+          if(!keterangan || keterangan === 'Masih di tempat') keterangan = 'Kehadiran Penuh';
+        }
+        if (!checkInDate) {
+            status = 'Terlambat';
+            if(!keterangan) keterangan = 'Absen masuk terlewat';
+        }
 
         return {
           id: attendanceData.id,
           name: name || '-',
           nip: nip || '-',
           rawCheckInTime: checkInDate,
+          rawCheckOutTime: checkOutDate,
           checkInTime: checkInDate ? format(checkInDate, 'HH:mm:ss') : '-',
-          checkOutTime: attendanceData.checkOutTime ? format(attendanceData.checkOutTime.toDate(), 'HH:mm:ss') : '-',
-          status: attendanceData.checkOutTime ? 'Pulang' : 'Hadir',
-          keterangan: attendanceData.description || (attendanceData.checkOutTime ? 'Kehadiran Penuh' : 'Masih di tempat'),
+          checkOutTime: checkOutDate ? format(checkOutDate, 'HH:mm:ss') : '-',
+          status,
+          keterangan,
         };
       });
       
-      // Pengurutan manual tidak lagi diperlukan karena sudah dihandle oleh query firestore
+      fetchedActivities.sort((a, b) => {
+        const timeA = a.rawCheckInTime || a.rawCheckOutTime;
+        const timeB = b.rawCheckInTime || b.rawCheckOutTime;
+        if (timeA && timeB) return timeA.getTime() - timeB.getTime();
+        if (timeA) return -1;
+        if (timeB) return 1;
+        return a.name.localeCompare(b.name);
+      });
 
+      setActivities(fetchedActivities);
+      
       if (isManualRefresh) {
-        const oldIds = activitiesRef.current.map(a => a.id).join(',');
-        const newIds = fetchedActivities.map(a => a.id).join(',');
-
-        if (oldIds === newIds) {
-          toast({
-            title: "Tidak Ada Data Baru",
-            description: "Daftar kehadiran masih sama dengan yang terakhir dimuat.",
-          });
-        } else {
-          setActivities(fetchedActivities);
-          toast({
+        toast({
             title: "Data Diperbarui",
             description: "Daftar aktivitas kehadiran telah berhasil dimuat ulang.",
-          });
-        }
-      } else {
-        setActivities(fetchedActivities);
+        });
       }
 
       setStatus('success');
@@ -151,7 +161,6 @@ const RecentAttendanceTable = () => {
       setStatus('error');
     } finally {
       setIsRefreshing(false);
-      // Hapus setStatus dari sini agar loading indicator tidak hilang prematur
     }
   }, [firestore, toast]);
 
@@ -167,6 +176,15 @@ const RecentAttendanceTable = () => {
   const sortedNumberedActivities = useMemo(() => {
     return activities.map((activity, index) => ({ ...activity, no: index + 1 }));
   }, [activities]);
+  
+  const getBadgeVariant = (status: Activity['status']) => {
+      switch(status) {
+          case 'Hadir': return 'default';
+          case 'Pulang': return 'secondary';
+          case 'Terlambat': return 'destructive';
+          default: return 'secondary';
+      }
+  }
 
   const TableContent = () => {
     if (status === 'loading' && !isRefreshing) {
@@ -202,7 +220,7 @@ const RecentAttendanceTable = () => {
             <div className="flex flex-col items-center justify-center">
               <WifiOff className="w-10 h-10 mb-3 text-muted-foreground" />
               <h3 className="text-lg font-semibold">Belum Ada Aktivitas</h3>
-              <p className="text-muted-foreground">Belum ada staf yang melakukan absensi masuk hari ini.</p>
+              <p className="text-muted-foreground">Belum ada catatan kehadiran yang dibuat hari ini.</p>
             </div>
           </TableCell>
         </TableRow>
@@ -219,7 +237,7 @@ const RecentAttendanceTable = () => {
         <TableCell className='text-center'>{activity.checkInTime}</TableCell>
         <TableCell className='text-center'>{activity.checkOutTime}</TableCell>
         <TableCell className='text-center'>
-          <Badge variant={activity.status === 'Hadir' ? 'default' : 'secondary'}>
+          <Badge variant={getBadgeVariant(activity.status)}>
             {activity.status}
           </Badge>
         </TableCell>
