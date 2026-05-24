@@ -3,6 +3,18 @@
 import { collection, getDocs, query, where, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval } from 'date-fns';
 
+// Sistem poin baru yang didefinisikan secara permanen sesuai permintaan.
+const pointsSystem = {
+    present: 1.0,
+    late: 0.9,
+    sick: 0.9,
+    permission: 0.9,
+    official_duty: 1.0,
+    absent: 0,
+    no_check_in: 0.9,  // Disamakan dengan terlambat
+    no_check_out: 0.9, // Disamakan dengan terlambat
+};
+
 const mapLeaveTypeToStatusKey = (leaveType: string): string => {
     switch(leaveType) {
         case 'Sakit': return 'sick';
@@ -18,21 +30,44 @@ export async function calculateMultipleUserStats(firestore: any, users: any[], m
         return [];
     }
 
-    const schoolConfigRef = doc(firestore, 'schoolConfig', 'default');
-    const schoolConfigSnap = await getDoc(schoolConfigRef);
-    const schoolConfig = schoolConfigSnap.exists() ? schoolConfigSnap.data() : {};
-    const weights = schoolConfig.attendanceWeights || {};
-    const presentWeight = weights.present ?? 1;
-
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
+    const monthId = format(monthStart, 'yyyy-MM');
 
-    const activeDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd }).filter(day => {
-        const offDays = schoolConfig.offDays ?? [0, 6];
-        return !offDays.includes(day.getDay());
-    }).length;
+    // Mengambil konfigurasi hari libur
+    const schoolConfigRef = doc(firestore, 'schoolConfig', 'default');
+    const monthlyConfigRef = doc(firestore, 'monthlyConfigs', monthId);
+
+    const [schoolConfigSnap, monthlyConfigSnap] = await Promise.all([
+        getDoc(schoolConfigRef),
+        getDoc(monthlyConfigRef)
+    ]);
+
+    const schoolConfig = schoolConfigSnap.exists() ? schoolConfigSnap.data() : {};
+    const monthlyConfig = monthlyConfigSnap.exists() ? monthlyConfigSnap.data() : {};
+    
+    // Menghitung hari kerja efektif
+    const recurringOffDays: number[] = schoolConfig.offDays ?? [0, 6];
+    const specificHolidays = new Set(monthlyConfig.holidays ?? []);
+
+    const workDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd }).filter(day => {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const dayOfWeek = day.getDay();
+        return !recurringOffDays.includes(dayOfWeek) && !specificHolidays.has(dayStr);
+    });
+    
+    const activeDaysInMonth = workDaysInMonth.length;
+    
+    if (activeDaysInMonth === 0) {
+        return users.map(user => ({
+            userId: user.id, name: user.name, nip: user.nip, role: user.role,
+            totalHadir: 0, totalIzin: 0, totalSakit: 0, totalDinas: 0, totalAlpa: 0,
+            totalScore: 0, maxScore: activeDaysInMonth, percentage: 0,
+        }));
+    }
 
     const userPromises = users.map(async (user) => {
+        // Mengambil data kehadiran dan izin pengguna
         const attendanceQuery = query(
             collection(firestore, 'users', user.id, 'attendanceRecords'),
             where('date', '>=', format(monthStart, 'yyyy-MM-dd')),
@@ -61,41 +96,76 @@ export async function calculateMultipleUserStats(firestore: any, users: any[], m
             });
         });
 
-        let totalScore = 0;
+        let totalPoin = 0;
         let totalHadir = 0, totalIzin = 0, totalSakit = 0, totalAlpa = 0, totalDinas = 0;
 
-        eachDayOfInterval({ start: monthStart, end: monthEnd }).forEach(day => {
+        // Iterasi hanya pada hari kerja efektif untuk menghitung poin dan total status
+        workDaysInMonth.forEach(day => {
             const dayStr = format(day, 'yyyy-MM-dd');
-            const dayOfWeek = day.getDay();
-
-            if ((schoolConfig.offDays ?? [0, 6]).includes(dayOfWeek)) {
-                return;
-            }
-
             const record = attendanceRecords.get(dayStr);
             const leaveType = leaveRecords.get(dayStr);
 
             let statusKey: string;
 
             if (record) {
-                statusKey = record.statusKey || 'present';
-                if (statusKey === 'present') totalHadir++;
+                // Prioritas ambil statusKey jika ada
+                if (record.statusKey) {
+                    statusKey = record.statusKey;
+                } else {
+                    // Fallback untuk data lama: baca dari status text
+                    switch ((record.status || '').toLowerCase()) {
+                        case 'hadir':
+                            statusKey = 'present';
+                            break;
+                        case 'terlambat':
+                            statusKey = 'late';
+                            break;
+                        case 'sakit':
+                            statusKey = 'sick';
+                            break;
+                        case 'izin':
+                            statusKey = 'permission';
+                            break;
+                        case 'dinas':
+                            statusKey = 'official_duty';
+                            break;
+                        case 'alpa':
+                            statusKey = 'absent';
+                            break;
+                        default:
+                            statusKey = 'present'; // Default ke 'hadir' jika status tidak dikenali
+                    }
+                }
+
+                // Hitung total berdasarkan status yang sudah ditentukan
+                if (statusKey === 'present' || statusKey === 'late') {
+                    totalHadir++;
+                } else if (statusKey === 'permission') {
+                    totalIzin++;
+                } else if (statusKey === 'sick') {
+                    totalSakit++;
+                } else if (statusKey === 'official_duty') {
+                    totalDinas++;
+                } else if (statusKey === 'absent') {
+                    totalAlpa++;
+                }
             } else if (leaveType) {
                 statusKey = mapLeaveTypeToStatusKey(leaveType);
-                 if (statusKey === 'permission') totalIzin++;
-                 else if (statusKey === 'sick') totalSakit++;
-                 else if (statusKey === 'official_duty') totalDinas++;
-                 else totalAlpa++;
+                if (statusKey === 'permission') totalIzin++;
+                else if (statusKey === 'sick') totalSakit++;
+                else if (statusKey === 'official_duty') totalDinas++;
+                else totalAlpa++;
             } else {
                 statusKey = 'absent';
                 totalAlpa++;
             }
             
-            totalScore += weights[statusKey] ?? 0;
+            // Akumulasi poin berdasarkan sistem yang baru
+            totalPoin += (pointsSystem as any)[statusKey] ?? 0;
         });
         
-        const maxScore = activeDaysInMonth * presentWeight;
-        const percentage = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
+        // Menghitung persentase dengan rumus baru: (totalPoin / hariEfektif) * 100
+        const percentage = activeDaysInMonth > 0 ? (totalPoin / activeDaysInMonth) * 100 : 0;
 
         return {
             userId: user.id,
@@ -107,7 +177,9 @@ export async function calculateMultipleUserStats(firestore: any, users: any[], m
             totalSakit,
             totalDinas,
             totalAlpa,
-            percentage: Math.min(100, percentage),
+            totalScore: totalPoin, // Mengirim total poin untuk transparansi di UI
+            maxScore: activeDaysInMonth, // Mengirim hari efektif sebagai skor maksimal
+            percentage: Math.min(100, percentage), // Memastikan tidak lebih dari 100%
         };
     });
 

@@ -7,6 +7,7 @@ import { FirebaseClientProvider } from '@/firebase';
 import PwaInstaller from '@/components/pwa-installer';
 import { ThemeProvider } from "@/components/theme-provider";
 import { ClientOnly } from "@/components/utilities/ClientOnly";
+import { SettingsProvider } from '@/contexts/SettingsContext';
 
 export const metadata: Metadata = {
   title: 'E-SPENLI',
@@ -44,8 +45,11 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
+            {/* CORRECTED PROVIDER ORDER */}
             <FirebaseClientProvider>
-              {children}
+              <SettingsProvider>
+                {children}
+              </SettingsProvider>
             </FirebaseClientProvider>
             <PwaInstaller />
             <Toaster />

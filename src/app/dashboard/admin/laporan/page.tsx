@@ -7,13 +7,16 @@ import { id } from 'date-fns/locale';
 import { useFirestore, useUser } from '@/firebase';
 import { collection, getDocs, query, doc, onSnapshot } from 'firebase/firestore';
 import { calculateMultipleUserStats } from '@/lib/attendance/calculateStats';
+import { useSettings } from '@/contexts/SettingsContext'; // IMPORT THE CENTRAL CONTEXT
 
+// UI Components
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChevronLeft, ChevronRight, RefreshCw, Edit, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -27,14 +30,18 @@ interface UserStat {
   totalSakit: number;
   totalDinas: number;
   totalAlpa: number;
+  totalScore: number;
+  maxScore: number;
   percentage: number;
 }
 
+// The Final, Architecturally Sound Solution
 export default function AdminLaporanPage() {
   const { user } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
+  const { isSettingsLoading } = useSettings(); // Use the context to know when settings are ready
 
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [stats, setStats] = useState<UserStat[]>([]);
@@ -50,27 +57,42 @@ export default function AdminLaporanPage() {
       const users = usersSnapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(u => (u as any).role !== 'admin');
+      // This function now relies on the accurate data propagated by the SettingsContext
       const userStats = await calculateMultipleUserStats(firestore, users, currentMonth);
       setStats(userStats as UserStat[]);
     } catch (error) {
       console.error("Error fetching summary report:", error);
-      toast({ title: "Gagal Memuat Laporan", description: "Terjadi kesalahan saat mengambil data.", variant: "destructive" });
+      toast({ title: "Gagal Memuat Laporan", description: `Terjadi kesalahan: ${error instanceof Error ? error.message : 'Unknown error'}`, variant: "destructive" });
     } finally {
-      setIsLoading(false);
+       setIsLoading(false);
     }
   }, [firestore, user, currentMonth, toast]);
 
+  // This is now the single source of truth for reactivity.
+  // It listens for month changes and for the settings to be loaded.
   useEffect(() => {
-    if (!firestore || !user) return;
+    // Don't fetch until both Firebase and global settings are ready.
+    if (isSettingsLoading || !firestore || !user) return;
+
     fetchStats();
-    const configRef = doc(firestore, 'schoolConfig', 'default');
-    const unsubscribe = onSnapshot(configRef, () => {
-      console.log("School config changed, refetching stats...");
-      toast({ title: 'Konfigurasi berubah', description: 'Menghitung ulang laporan dengan data terbaru...' });
-      fetchStats();
+
+    // Real-time listener for the specific month's config. This is the core of the solution.
+    const monthId = format(currentMonth, 'yyyy-MM');
+    const monthlyConfigRef = doc(firestore, 'monthlyConfigs', monthId);
+
+    const unsubscribe = onSnapshot(monthlyConfigRef, (doc) => {
+        console.log("Report Page: Detected a change in monthly config. Refetching stats.");
+        toast({ title: 'Data Konfigurasi Berubah', description: 'Laporan sedang diperbarui secara otomatis...'});
+        fetchStats();
+    }, (error) => {
+        console.error("Report page listener failed:", error);
     });
+
+    // Clean up the listener when the component unmounts or the month changes.
     return () => unsubscribe();
-  }, [fetchStats, firestore, user, toast]);
+
+  }, [currentMonth, user, firestore, isSettingsLoading, fetchStats, toast]);
+
 
   const filteredStats = useMemo(() => {
     return stats.filter(stat => 
@@ -83,22 +105,20 @@ export default function AdminLaporanPage() {
     setCurrentMonth(current => direction === 'next' ? addMonths(current, 1) : subMonths(current, 1));
   };
 
-  const handleRefresh = () => {
-    toast({ title: "Memuat ulang...", description: "Mengambil data terbaru." });
-    fetchStats();
-  };
-
   const handleEdit = (userId: string) => {
     const url = `/dashboard/admin/laporan-guru/${userId}?month=${format(currentMonth, 'yyyy-MM')}`;
     router.push(url);
   };
+
+  // The combined loading state is now simpler and more reliable
+  const isPageLoading = isLoading || isSettingsLoading;
 
   return (
     <div className="flex-1 pt-4 pb-24 md:p-8">
       <Card>
         <CardHeader className="px-4 md:px-6 pt-4 md:pt-6">
           <CardTitle>Laporan Ringkasan Kehadiran</CardTitle>
-          <CardDescription>Ringkasan kehadiran bulanan untuk seluruh personil sekolah.</CardDescription>
+          <CardDescription>Ringkasan kehadiran bulanan untuk seluruh personil sekolah. Data diperbarui secara real-time.</CardDescription>
         </CardHeader>
         <CardContent className="p-4 md:p-6 space-y-4">
           
@@ -108,8 +128,8 @@ export default function AdminLaporanPage() {
                   <span className="w-full text-center font-semibold capitalize">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
                   <Button variant="outline" size="icon" onClick={() => handleMonthChange('next')} disabled={isSameMonth(currentMonth, new Date())}><ChevronRight className="h-4 w-4" /></Button>
               </div>
-              <Button onClick={handleRefresh} disabled={isLoading} className="w-full sm:w-auto">
-                  <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <Button onClick={() => fetchStats()} disabled={isPageLoading} className="w-full sm:w-auto">
+                  <RefreshCw className={`mr-2 h-4 w-4 ${isPageLoading ? 'animate-spin' : ''}`} />
                   Segarkan
               </Button>
           </div>
@@ -133,40 +153,51 @@ export default function AdminLaporanPage() {
           </div>
 
           <div className="border rounded-md overflow-x-auto">
-            <Table>
-              <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead className="text-center">Hadir</TableHead><TableHead className="text-center">Sakit</TableHead><TableHead className="text-center">Izin</TableHead><TableHead className="text-center">Dinas</TableHead><TableHead className="text-center">Alpa</TableHead><TableHead className="text-center">Persentase</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell><Skeleton className="h-5 w-3/4" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
-                       <TableCell className="w-[120px] text-right"><Skeleton className="h-8 w-24 ml-auto" /></TableCell>
-                    </TableRow>
-                  ))
-                ) : filteredStats.length > 0 ? (
-                  filteredStats.map(stat => (
-                    <TableRow key={stat.userId}>
-                      <TableCell><div className="font-medium">{stat.name}</div><div className="text-sm text-muted-foreground">NIP: {stat.nip || '-'} | <span className='capitalize'>{stat.role}</span></div></TableCell>
-                      <TableCell className="text-center">{stat.totalHadir}</TableCell>
-                      <TableCell className="text-center">{stat.totalSakit}</TableCell>
-                      <TableCell className="text-center">{stat.totalIzin}</TableCell>
-                      <TableCell className="text-center">{stat.totalDinas}</TableCell>
-                      <TableCell className="text-center text-destructive font-semibold">{stat.totalAlpa}</TableCell>
-                      <TableCell className="text-center font-bold">{stat.percentage.toFixed(1)}%</TableCell>
-                      <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => handleEdit(stat.userId)}><Edit className="h-4 w-4 mr-2"/>Detail</Button></TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow><TableCell colSpan={8} className="h-32 text-center">Tidak ada data untuk ditampilkan.</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
+            <TooltipProvider>
+              <Table>
+                <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead className="text-center">Hadir</TableHead><TableHead className="text-center">Sakit</TableHead><TableHead className="text-center">Izin</TableHead><TableHead className="text-center">Dinas</TableHead><TableHead className="text-center">Alpa</TableHead><TableHead className="text-center">Persentase</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {isPageLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell><Skeleton className="h-5 w-3/4" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
+                         <TableCell className="w-[120px] text-right"><Skeleton className="h-8 w-24 ml-auto" /></TableCell>
+                      </TableRow>
+                    ))
+                  ) : filteredStats.length > 0 ? (
+                    filteredStats.map(stat => (
+                      <TableRow key={stat.userId}>
+                        <TableCell><div className="font-medium">{stat.name}</div><div className="text-sm text-muted-foreground">NIP: {stat.nip || '-'} | <span className='capitalize'>{stat.role}</span></div></TableCell>
+                        <TableCell className="text-center">{stat.totalHadir}</TableCell>
+                        <TableCell className="text-center">{stat.totalSakit}</TableCell>
+                        <TableCell className="text-center">{stat.totalIzin}</TableCell>
+                        <TableCell className="text-center">{stat.totalDinas}</TableCell>
+                        <TableCell className="text-center text-destructive font-semibold">{stat.totalAlpa}</TableCell>
+                        <TableCell className="text-center font-bold">
+                           <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help">{stat.percentage.toFixed(1)}%</span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className='text-sm'>Perhitungan: <br/> (Total Poin / Hari Efektif) * 100 <br/>{`(${stat.totalScore.toFixed(2)} / ${stat.maxScore}) * 100`}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                        </TableCell>
+                        <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => handleEdit(stat.userId)}><Edit className="h-4 w-4 mr-2"/>Detail</Button></TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow><TableCell colSpan={8} className="h-32 text-center">Tidak ada data untuk ditampilkan.</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TooltipProvider>
           </div>
         </CardContent>
       </Card>

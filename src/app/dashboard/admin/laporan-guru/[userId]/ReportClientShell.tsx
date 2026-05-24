@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, parseISO, isValid, eachDayOfInterval, isWithinInterval, isBefore, startOfDay, endOfDay, isSameMonth } from 'date-fns';
 import { id } from 'date-fns/locale';
 
 // Firebase and custom hooks
 import { useFirestore, useCollection, useDoc, useMemoFirebase } from '@/firebase';
-import { collection, query, where, Timestamp, doc, writeBatch, serverTimestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, Timestamp, doc, writeBatch, serverTimestamp, getDocs, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 // UI Components
@@ -60,8 +60,13 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
     const monthStart = useMemo(() => startOfMonth(currentMonth), [currentMonth]);
     const monthEnd = useMemo(() => endOfMonth(currentMonth), [currentMonth]);
 
-    const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore, refetchTrigger]);
+    // --- Data Fetching --- //
+    const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
+    const monthId = useMemo(() => format(currentMonth, 'yyyy-MM'), [currentMonth]);
+    const monthlyConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'monthlyConfigs', monthId) : null, [firestore, monthId]);
+
     const { data: schoolConfig, isLoading: isConfigLoading } = useDoc(null, schoolConfigRef);
+    const { data: monthlyConfig, isLoading: isMonthlyConfigLoading } = useDoc(null, monthlyConfigRef);
 
     const attendanceQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'users', userId, 'attendanceRecords'), where('date', '>=', format(monthStart, 'yyyy-MM-dd')), where('date', '<=', format(monthEnd, 'yyyy-MM-dd'))) : null, [firestore, userId, monthStart, monthEnd, refetchTrigger]);
     const leaveQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'users', userId, 'leaveRequests'), where('status', '==', 'approved'), where('startDate', '<=', Timestamp.fromDate(monthEnd))) : null, [firestore, userId, monthEnd, refetchTrigger]);
@@ -73,72 +78,71 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
         setRefetchTrigger(trigger => trigger + 1);
     }, []);
 
+    useEffect(() => {
+        if (!firestore) return;
+        const unsubscribes = [
+            onSnapshot(doc(firestore, 'schoolConfig', 'default'), () => refetchAllData()),
+            onSnapshot(doc(firestore, 'monthlyConfigs', format(currentMonth, 'yyyy-MM')), () => refetchAllData())
+        ];
+        return () => unsubscribes.forEach(unsub => unsub());
+    }, [firestore, currentMonth, refetchAllData]);
+
     const { reportDetails, summary } = useMemo(() => {
-        if (!attendanceHistory || !leaveHistory || !schoolConfig) return { reportDetails: [], summary: {} };
+        if (!attendanceHistory || !leaveHistory || !schoolConfig || !monthlyConfig) return { reportDetails: [], summary: {} };
 
         const today = startOfDay(new Date());
-        const offDays: number[] = Array.isArray(schoolConfig.offDays) ? schoolConfig.offDays : [0, 6];
+        const recurringOffDays: number[] = Array.isArray(schoolConfig.offDays) ? schoolConfig.offDays : [0, 6];
+        const specificHolidays = new Set(monthlyConfig.holidays ?? []);
+        
         const attendanceMap = new Map(attendanceHistory.map(rec => [rec.id, rec]));
         const leaveMap = new Map<string, any>();
 
-        const generalLeaves = leaveHistory.filter(l => l.manualEntry !== true);
-        const manualAdminLeaves = leaveHistory.filter(l => l.manualEntry === true);
-
-        generalLeaves.forEach(leave => {
-            if (leave.startDate?.toDate && leave.endDate?.toDate) {
-                try {
-                    const interval = { start: leave.startDate.toDate(), end: leave.endDate.toDate() };
-                    if (isBefore(interval.end, interval.start)) return;
-
-                    eachDayOfInterval(interval).forEach(day => {
-                        if (isWithinInterval(day, { start: monthStart, end: monthEnd })) {
-                            leaveMap.set(format(day, 'yyyy-MM-dd'), leave);
-                        }
-                    });
-                } catch (e) {
-                    console.error("Error processing general leave interval:", e, leave);
-                }
-            }
-        });
-
-        manualAdminLeaves.forEach(leave => {
-            if (leave.startDate?.toDate) {
-                const day = leave.startDate.toDate();
-                 if (isWithinInterval(day, { start: monthStart, end: monthEnd })) {
-                    leaveMap.set(format(day, 'yyyy-MM-dd'), leave);
-                }
-            }
+        const allLeaves = leaveHistory.filter(l => l.startDate?.toDate);
+        allLeaves.forEach(leave => {
+            const startDate = leave.startDate.toDate();
+            const endDate = leave.endDate?.toDate() || startDate;
+            try {
+                const interval = { start: startDate, end: endDate };
+                if (isBefore(interval.end, interval.start)) return;
+                eachDayOfInterval(interval).forEach(day => {
+                    if (isWithinInterval(day, { start: monthStart, end: monthEnd })) {
+                        leaveMap.set(format(day, 'yyyy-MM-dd'), leave);
+                    }
+                });
+            } catch (e) { console.error("Error processing leave interval:", e, leave); }
         });
 
         const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
         const report = allDaysInMonth.map(day => {
             const dayStr = format(day, 'yyyy-MM-dd');
-            if (isBefore(day, today) || day.getTime() === today.getTime()) {
-                const isRecurringOff = offDays.includes(day.getDay());
-                if (isRecurringOff) return null;
-                
-                const leaveRecord = leaveMap.get(dayStr);
-                if (leaveRecord && leaveRecord.type !== 'Pulang Cepat') {
-                    return { id: dayStr, date: day, checkInTime: null, checkOutTime: null, statusKey: mapLeaveTypeToStatusKey(leaveRecord.type), raw: leaveRecord };
-                }
+            const dayOfWeek = day.getDay();
 
-                const attendanceRecord = attendanceMap.get(dayStr);
-                if (attendanceRecord) {
-                    const checkInTime = attendanceRecord.checkInTime.toDate();
-                    const checkOutTime = attendanceRecord.checkOutTime?.toDate();
-                    let statusKey = 'present';
-                    if (schoolConfig.useTimeValidation && schoolConfig.checkInEndTime) {
-                        const [endH, endM] = schoolConfig.checkInEndTime.split(':').map(Number);
-                        const checkInDeadline = new Date(checkInTime); checkInDeadline.setHours(endH, endM, 0, 0);
-                        if (isBefore(checkInDeadline, checkInTime)) statusKey = 'late';
-                    }
-                    if (!checkOutTime && isBefore(day, today)) statusKey = 'no_check_out';
-                    return { id: dayStr, date: day, checkInTime, checkOutTime, statusKey, raw: attendanceRecord };
-                }
+            const isRecurringOff = recurringOffDays.includes(dayOfWeek);
+            const isSpecificHoliday = specificHolidays.has(dayStr);
+            
+            if (isRecurringOff || isSpecificHoliday) return null; // It's a holiday, so skip.
+            if (isBefore(today, day)) return null; // Date is in the future, so skip.
 
-                return { id: dayStr, date: day, checkInTime: null, checkOutTime: null, statusKey: 'absent', raw: null };
+            const leaveRecord = leaveMap.get(dayStr);
+            if (leaveRecord && leaveRecord.type !== 'Pulang Cepat') {
+                return { id: dayStr, date: day, checkInTime: null, checkOutTime: null, statusKey: mapLeaveTypeToStatusKey(leaveRecord.type), raw: leaveRecord };
             }
-            return null;
+
+            const attendanceRecord = attendanceMap.get(dayStr);
+            if (attendanceRecord) {
+                const checkInTime = attendanceRecord.checkInTime.toDate();
+                const checkOutTime = attendanceRecord.checkOutTime?.toDate();
+                let statusKey = 'present';
+                if (schoolConfig.useTimeValidation && schoolConfig.checkInEndTime) {
+                    const [endH, endM] = schoolConfig.checkInEndTime.split(':').map(Number);
+                    const checkInDeadline = new Date(checkInTime); checkInDeadline.setHours(endH, endM, 0, 0);
+                    if (isBefore(checkInDeadline, checkInTime)) statusKey = 'late';
+                }
+                if (!checkOutTime && isBefore(day, today)) statusKey = 'no_check_out';
+                return { id: dayStr, date: day, checkInTime, checkOutTime, statusKey, raw: attendanceRecord };
+            }
+
+            return { id: dayStr, date: day, checkInTime: null, checkOutTime: null, statusKey: 'absent', raw: null };
         });
 
         const validReport = report.filter(Boolean) as ReportDetail[];
@@ -151,7 +155,7 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
         }, {} as { [key: string]: number });
 
         return { reportDetails: validReport, summary: summaryCalc };
-    }, [attendanceHistory, leaveHistory, schoolConfig, monthStart, monthEnd]);
+    }, [attendanceHistory, leaveHistory, schoolConfig, monthlyConfig, monthStart, monthEnd]);
 
     const absentDays = useMemo(() => reportDetails.filter(d => d.statusKey === 'absent'), [reportDetails]);
 
@@ -182,18 +186,14 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
 
         setIsSaving(true);
         try {
+            const batch = writeBatch(firestore);
             for (const dateStr in changes) {
                 const action = changes[dateStr];
                 const date = parseISO(dateStr);
-                const batch = writeBatch(firestore);
-
-                const dayStart = startOfDay(date);
-                const dayEnd = endOfDay(date);
 
                 const leaveRequestsQuery = query(
                     collection(firestore, `users/${userId}/leaveRequests`),
-                    where('startDate', '>=', Timestamp.fromDate(dayStart)),
-                    where('startDate', '<=', Timestamp.fromDate(dayEnd))
+                    where('startDate', '==', Timestamp.fromDate(startOfDay(date)))
                 );
                 const existingLeavesSnapshot = await getDocs(leaveRequestsQuery);
                 existingLeavesSnapshot.forEach(leaveDoc => {
@@ -203,18 +203,15 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                 const attendanceRecordRef = doc(firestore, `users/${userId}/attendanceRecords`, dateStr);
                 batch.delete(attendanceRecordRef);
 
-                const typeMap: { [key: string]: string } = {
-                    sakit: 'Sakit',
-                    izin: 'Izin',
-                    dinas: 'Dinas',
-                };
+                const typeMap: { [key: string]: string } = { sakit: 'Sakit', izin: 'Izin', dinas: 'Dinas' };
 
                 if (action === 'hadir') {
                     batch.set(attendanceRecordRef, {
                         date: dateStr,
                         checkInTime: Timestamp.fromDate(new Date(`${dateStr}T08:00:00`)),
                         checkOutTime: null,
-                        status: 'Hadir',
+                        status: 'Hadir', // Tetap simpan status teks untuk kompatibilitas
+                        statusKey: 'present', // **TAMBAHAN: Simpan statusKey secara eksplisit**
                         manualEntry: true,
                         correctedBy: 'admin',
                         timestamp: serverTimestamp(),
@@ -225,16 +222,16 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                         status: 'approved',
                         type: typeMap[action],
                         reason: reasons[dateStr] || '',
-                        startDate: Timestamp.fromDate(date),
-                        endDate: Timestamp.fromDate(date),
+                        startDate: Timestamp.fromDate(startOfDay(date)),
+                        endDate: Timestamp.fromDate(endOfDay(date)),
                         requestedAt: serverTimestamp(),
                         approvedAt: serverTimestamp(),
                         approvedBy: 'admin',
                         manualEntry: true,
                     });
                 }
-                await batch.commit();
             }
+            await batch.commit();
 
             toast({ title: "Sukses", description: "Perubahan kehadiran berhasil disimpan." });
             refetchAllData();
@@ -249,7 +246,7 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
 
     const handleOpenSingleEdit = (day: ReportDetail) => setEditingDays([day]);
     
-    const isLoading = isAttendanceLoading || isLeaveLoading || isConfigLoading;
+    const isLoading = isAttendanceLoading || isLeaveLoading || isConfigLoading || isMonthlyConfigLoading;
 
     const SummaryItem = ({ label, value }: { label: string, value: number | undefined }) => (
         <div className="flex flex-col items-center justify-center p-4 border rounded-lg bg-slate-50">
@@ -264,52 +261,31 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
               <DialogContent className="sm:max-w-[480px]">
                 <DialogHeader>
                   <DialogTitle>Perbaiki Kehadiran</DialogTitle>
-                  <DialogDescription>
-                    Pilih tindakan perbaikan untuk tanggal yang bermasalah.
-                  </DialogDescription>
+                  <DialogDescription>Pilih tindakan perbaikan untuk setiap tanggal yang bermasalah.</DialogDescription>
                 </DialogHeader>
-                <ScrollArea className="h-[400px] p-4">
-                  <div className="space-y-4">
-                    {(editingDays || []).map((day) => (
-                      <div key={day.id} className="p-4 border rounded-md">
-                        <p className="font-semibold mb-3">{format(day.date, 'EEEE, dd MMMM yyyy', { locale: id })}</p>
-                        <RadioGroup value={changes[day.id] || ''} onValueChange={(value) => handleRadioChange(day.id, value)}>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="hadir" id={`hadir-${day.id}`} />
-                            <Label htmlFor={`hadir-${day.id}`}>Jadikan Hadir</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="sakit" id={`sakit-${day.id}`} />
-                            <Label htmlFor={`sakit-${day.id}`}>Jadikan Sakit</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="izin" id={`izin-${day.id}`} />
-                            <Label htmlFor={`izin-${day.id}`}>Jadikan Izin Pribadi</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="dinas" id={`dinas-${day.id}`} />
-                            <Label htmlFor={`dinas-${day.id}`}>Jadikan Izin Dinas</Label>
-                          </div>
-                        </RadioGroup>
-                        {(changes[day.id] === 'sakit' || changes[day.id] === 'izin' || changes[day.id] === 'dinas') && (
-                            <Textarea
-                                placeholder={`Tuliskan keterangan ${changes[day.id]}...`}
-                                className="mt-3"
-                                value={reasons[day.id] || ''}
-                                onChange={(e) => handleReasonChange(day.id, e.target.value)}
-                            />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                {editingDays && editingDays.length > 0 ? (
+                    <ScrollArea className="h-[400px] p-4">
+                        <div className="space-y-4">
+                            {editingDays.map((day) => (
+                            <div key={day.id} className="p-4 border rounded-md">
+                                <p className="font-semibold mb-3">{format(day.date, 'EEEE, dd MMMM yyyy', { locale: id })}</p>
+                                <RadioGroup value={changes[day.id] || ''} onValueChange={(value) => handleRadioChange(day.id, value)}>
+                                <div className="flex items-center space-x-2"><RadioGroupItem value="hadir" id={`hadir-${day.id}`} /><Label htmlFor={`hadir-${day.id}`}>Jadikan Hadir</Label></div>
+                                <div className="flex items-center space-x-2"><RadioGroupItem value="sakit" id={`sakit-${day.id}`} /><Label htmlFor={`sakit-${day.id}`}>Jadikan Sakit</Label></div>
+                                <div className="flex items-center space-x-2"><RadioGroupItem value="izin" id={`izin-${day.id}`} /><Label htmlFor={`izin-${day.id}`}>Jadikan Izin Pribadi</Label></div>
+                                <div className="flex items-center space-x-2"><RadioGroupItem value="dinas" id={`dinas-${day.id}`} /><Label htmlFor={`dinas-${day.id}`}>Jadikan Izin Dinas</Label></div>
+                                </RadioGroup>
+                                {(changes[day.id] === 'sakit' || changes[day.id] === 'izin' || changes[day.id] === 'dinas') && (
+                                    <Textarea placeholder={`Tuliskan keterangan ${changes[day.id]}...`} className="mt-3" value={reasons[day.id] || ''} onChange={(e) => handleReasonChange(day.id, e.target.value)} />
+                                )}
+                            </div>
+                            ))}
+                        </div>
+                    </ScrollArea>
+                ) : <p className='p-4'>Tidak ada data yang perlu diperbaiki pada periode ini.</p>}
                 <DialogFooter>
-                  <DialogClose asChild>
-                    <Button type="button" variant="secondary" disabled={isSaving}>Batal</Button>
-                  </DialogClose>
-                  <Button onClick={handleSave} disabled={isSaving || Object.keys(changes).length === 0}>
-                    {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
-                  </Button>
+                  <DialogClose asChild><Button type="button" variant="secondary" disabled={isSaving}>Batal</Button></DialogClose>
+                  <Button onClick={handleSave} disabled={isSaving || Object.keys(changes).length === 0}>{isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
