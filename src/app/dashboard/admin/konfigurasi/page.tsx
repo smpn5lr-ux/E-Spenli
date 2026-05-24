@@ -441,6 +441,9 @@ export default function KonfigurasiAbsenPage() {
         </CardContent>
       </Card>
 
+      {/* Monthly Holiday Settings */}
+      {schoolConfigData && <MonthlyConfigCalendar user={user} schoolConfig={schoolConfigData} onHolidaysChange={handleMonthlyHolidaysChange} />}
+      
       {/* Report Customization */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
@@ -475,9 +478,6 @@ export default function KonfigurasiAbsenPage() {
             </CardContent>
         </Card>
       </div>
-
-      {/* Monthly Holiday Settings */}
-      {schoolConfigData && <MonthlyConfigCalendar user={user} schoolConfig={schoolConfigData} onHolidaysChange={handleMonthlyHolidaysChange} />}
 
        {/* QR Code Card (Moved to the end) */}
        <Card>
