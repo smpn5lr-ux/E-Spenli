@@ -1,66 +1,55 @@
 'use client';
 
 import { TableRow, TableCell } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pencil } from 'lucide-react';
+import { Edit, AlertCircle, CheckCircle, UserCheck, ShieldCheck, UserX, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 
-// --- Type Definitions ---
-interface ReportItem {
-  id: string; // yyyy-MM-dd
-  date: Date;
-  checkInTime: Date | null;
-  checkOutTime: Date | null;
-  statusKey: string;
-  raw: any; // Raw data from Firestore
-}
-
-interface ReportViewProps {
-  item: ReportItem;
-  onEdit: (item: ReportItem) => void; // Function to handle editing a single day
-}
-
-// Mapping from statusKey to human-readable status and color
-const statusMap: { [key: string]: { label: string; color: string } } = {
-    present: { label: 'Hadir', color: 'bg-green-100 text-green-800' },
-    late: { label: 'Terlambat', color: 'bg-yellow-100 text-yellow-800' },
-    permission: { label: 'Izin/Sakit', color: 'bg-blue-100 text-blue-800' },
-    official_duty: { label: 'Dinas', color: 'bg-indigo-100 text-indigo-800' },
-    absent: { label: 'Alpa', color: 'bg-red-100 text-red-800' },
-    no_check_out: { label: 'Tidak Pulang', color: 'bg-amber-100 text-amber-800' },
+const statusConfig: { [key: string]: { text: string; variant: "default" | "destructive" | "secondary"; icon?: React.ReactNode } } = {
+    present:        { text: 'Hadir',         variant: 'default',     icon: <CheckCircle className="h-3 w-3" /> },
+    late:           { text: 'Terlambat',     variant: 'destructive', icon: <Clock className="h-3 w-3" /> },
+    absent:         { text: 'Alpa',          variant: 'destructive', icon: <UserX className="h-3 w-3" /> },
+    sick:           { text: 'Sakit',         variant: 'secondary',   icon: <AlertCircle className="h-3 w-3" /> },
+    permission:     { text: 'Izin',          variant: 'secondary',   icon: <UserCheck className="h-3 w-3" /> },
+    official_duty:  { text: 'Dinas',         variant: 'secondary',   icon: <ShieldCheck className="h-3 w-3" /> },
+    no_check_out:   { text: 'Tidak Pulang',  variant: 'destructive', icon: <AlertCircle className="h-3 w-3" /> },
 };
 
+interface ReportViewProps {
+    item: {
+        id: string;
+        date: Date;
+        checkInTime: Date | null;
+        checkOutTime: Date | null;
+        statusKey: string;
+        raw: any;
+    };
+    onEdit: (item: any) => void;
+}
 
-const ReportView = ({ item, onEdit }: ReportViewProps) => {
-
-    const dateString = format(item.date, 'EEEE, dd MMMM yyyy', { locale: id });
-    const checkInString = item.checkInTime ? format(item.checkInTime, 'HH:mm') : '-';
-    const checkOutString = item.checkOutTime ? format(item.checkOutTime, 'HH:mm') : '-';
-
-    const statusInfo = statusMap[item.statusKey] || { label: 'Unknown', color: 'bg-gray-100 text-gray-800' };
-    const isEditable = item.statusKey === 'absent';
+export default function ReportView({ item, onEdit }: ReportViewProps) {
+    const config = statusConfig[item.statusKey] || { text: 'N/A', variant: 'secondary' };
 
     return (
         <TableRow>
-            <TableCell className="font-medium">{dateString}</TableCell>
-            <TableCell className="text-center">{checkInString}</TableCell>
-            <TableCell className="text-center">{checkOutString}</TableCell>
+            <TableCell className="font-medium">{format(item.date, 'EEEE, dd MMMM yyyy', { locale: id })}</TableCell>
+            <TableCell>{item.checkInTime ? format(item.checkInTime, 'HH:mm') : '-'}</TableCell>
+            <TableCell>{item.checkOutTime ? format(item.checkOutTime, 'HH:mm') : '-'}</TableCell>
             <TableCell>
-                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusInfo.color}`}>
-                    {statusInfo.label}
-                </span>
+                <Badge variant={config.variant} className="flex items-center w-fit gap-1 capitalize">
+                    {config.icon}
+                    <span>{config.text}</span>
+                </Badge>
             </TableCell>
-            <TableCell>{item.raw?.reason || '-'}</TableCell>
+            <TableCell className="max-w-[200px] truncate">{item.raw?.reason || item.raw?.description || '-'}</TableCell>
             <TableCell className="text-right">
-                {isEditable && (
-                    <Button variant="ghost" size="icon" onClick={() => onEdit(item)} title="Perbaiki status Alpa">
-                        <Pencil className="h-4 w-4" />
-                    </Button>
-                )}
+                <Button variant="outline" size="icon" onClick={() => onEdit(item)}>
+                    <Edit className="h-4 w-4" />
+                    <span className="sr-only">Perbaiki</span>
+                </Button>
             </TableCell>
         </TableRow>
     );
 }
-
-export default ReportView;

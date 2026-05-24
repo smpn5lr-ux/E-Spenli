@@ -46,7 +46,7 @@ export default function EditAttendanceModal({
   };
 
   const handleClose = () => {
-    // Reset state on close
+    // Reset state on close to ensure it's fresh next time.
     setAction('present');
     setReason('');
     setError(null);
@@ -56,7 +56,7 @@ export default function EditAttendanceModal({
   if (!date) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Perbaiki Kehadiran</DialogTitle>
@@ -65,7 +65,11 @@ export default function EditAttendanceModal({
           </DialogDescription>
         </DialogHeader>
         <div className="py-4">
-          <RadioGroup value={action} onValueChange={(value) => setAction(value as 'present' | 'leave' | 'sick')}>
+          <RadioGroup 
+            value={action} 
+            defaultValue="present" // Fix: Set a default value to prevent uncontrolled -> controlled switch
+            onValueChange={(value) => setAction(value as 'present' | 'leave' | 'sick')}
+          >
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="present" id="r1" />
               <Label htmlFor="r1">Jadikan Hadir</Label>

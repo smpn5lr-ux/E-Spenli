@@ -69,7 +69,7 @@ export interface MonthlyReportData {
     isCancellable?: boolean;
 }
 
-// *** FINAL REFACTOR #3: CORRECTING LABEL KEYS & LOGIC ***
+// *** FINAL REFACTOR #4: FIX ADMIN EDITED STATUS INFERENCE ***
 export async function fetchUserMonthlyReportData(
     firestore: Firestore,
     userId: string,
@@ -123,14 +123,9 @@ export async function fetchUserMonthlyReportData(
         const attendanceRecord = attendanceMap.get(dayStr);
         const leaveRecord = leaveMap.get(dayStr);
 
-        if (attendanceRecord && attendanceRecord.adminEdited) {
-            recordForDay = {
-                id: attendanceRecord.id, date: day, status: 'Hadir', 
-                keterangan: attendanceRecord.description || labels[LABEL_KEYS.ADMIN_CORRECTION],
-                checkInTime: attendanceRecord.checkInTime, checkOutTime: attendanceRecord.checkOutTime,
-            };
-        } 
-        else if (leaveRecord && leaveRecord.status === 'approved') {
+        // --- LOGIC REORDER & FIX ---
+        // 1. Prioritize approved leave requests.
+        if (leaveRecord && leaveRecord.status === 'approved') {
             let keteranganLabel = labels[LABEL_KEYS.PERMISSION]; 
             const leaveType = leaveRecord.type.toLowerCase();
             if (leaveType === 'sakit') { keteranganLabel = labels[LABEL_KEYS.SICK]; }
@@ -141,7 +136,25 @@ export async function fetchUserMonthlyReportData(
                 keterangan: leaveRecord.reason || keteranganLabel,
                 isCancellable: isAfter(leaveRecord.startDate.toDate(), today)
             };
+        }
+        // 2. Handle admin-edited records, inferring status from description.
+        else if (attendanceRecord && attendanceRecord.adminEdited) {
+            const description = (attendanceRecord.description || '').toLowerCase();
+            // Infer status from admin's text. Default to 'Hadir'.
+            const isIzin = ['izin', 'sakit', 'dinas'].some(keyword => description.includes(keyword));
+            const status: CoreStatus = isIzin ? 'Izin' : 'Hadir';
+
+            recordForDay = {
+                id: attendanceRecord.id, 
+                date: day, 
+                status: status, 
+                keterangan: attendanceRecord.description || labels[LABEL_KEYS.ADMIN_CORRECTION],
+                // Only show times if status is 'Hadir'
+                checkInTime: status === 'Hadir' ? attendanceRecord.checkInTime : undefined,
+                checkOutTime: status === 'Hadir' ? attendanceRecord.checkOutTime : undefined,
+            };
         } 
+        // 3. Handle standard attendance records.
         else if (attendanceRecord) {
             const hasCheckIn = !!attendanceRecord.checkInTime;
             const hasCheckOut = !!attendanceRecord.checkOutTime;
@@ -154,7 +167,7 @@ export async function fetchUserMonthlyReportData(
             } else if (!hasCheckIn && hasCheckOut) {
                 keterangan = labels[LABEL_KEYS.NO_CHECK_IN];
             } else {
-                keterangan = labels[LABEL_KEYS.PRESENT]; // Uses the corrected key
+                keterangan = labels[LABEL_KEYS.PRESENT];
             }
 
             recordForDay = {
@@ -162,6 +175,7 @@ export async function fetchUserMonthlyReportData(
                 keterangan: keterangan, checkInTime: attendanceRecord.checkInTime, checkOutTime: attendanceRecord.checkOutTime,
             };
         } 
+        // 4. Handle absences (Alpa).
         else {
              if (leaveRecord && leaveRecord.status === 'pending') {
                  recordForDay = {
