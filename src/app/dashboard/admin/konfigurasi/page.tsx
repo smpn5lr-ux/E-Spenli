@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -18,10 +18,10 @@ import { Switch } from '@/components/ui/switch';
 import { Download, Loader2, RefreshCw, LocateFixed, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useDoc, useMemoFirebase, useUser, setDocumentNonBlocking } from '@/firebase';
-import { doc, setDoc, writeBatch, onSnapshot } from 'firebase/firestore'; // FIXED: onSnapshot is now imported
+import { doc, writeBatch } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { Checkbox } from '@/components/ui/checkbox';
-import { format, eachDayOfInterval, startOfMonth, parseISO } from 'date-fns';
+import { format, eachDayOfInterval, startOfMonth } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
@@ -33,45 +33,37 @@ import {
 } from "@/components/ui/tooltip"
 import { useSettings } from '@/contexts/SettingsContext';
 
+// --- Days of Week (Helper) ---
 const daysOfWeek = [
     { value: 0, label: 'Minggu' }, { value: 1, label: 'Senin' }, { value: 2, label: 'Selasa' }, 
     { value: 3, label: 'Rabu' }, { value: 4, label: 'Kamis' }, { value: 5, label: 'Jumat' }, { value: 6, label: 'Sabtu' },
 ];
 
-const statusKeyToLabelMap: { [key: string]: string } = {
-    present: 'Hadir Penuh (Masuk & Pulang)',
-    late: 'Terlambat',
-    absent: 'Alpa',
-    sick: 'Sakit',
-    permission: 'Izin (Izin Pribadi)',
-    official_duty: 'Izin Dinas',
-    no_check_in: 'Hanya Absen Pulang (Tanpa Masuk)',
-    no_check_out: 'Hanya Absen Masuk (Tanpa Pulang)',
-};
-
+// =======================================================================================
+// REFACTORED: The Monthly Calendar Component (Now a "Dumb" Component)
+// It relies entirely on SettingsContext for its data and logic.
+// =======================================================================================
 function MonthlyConfigCalendar() {
-  const firestore = useFirestore();
   const { toast } = useToast();
-  const { schoolConfig, isSettingsLoading: isSchoolConfigLoading } = useSettings();
-  
+  const {
+    schoolConfig,
+    monthlyConfigs,
+    subscribeToMonth,
+    updateHolidaysForMonth,
+    isMonthlyConfigLoading
+  } = useSettings();
+
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
-  const [holidays, setHolidays] = useState<Set<string>>(new Set());
-  const [isMonthlyConfigLoading, setIsMonthlyConfigLoading] = useState(true);
-  const [isSavingMonth, setIsSavingMonth] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const monthlyConfigId = useMemo(() => format(currentMonth, 'yyyy-MM'), [currentMonth]);
+  const currentMonthData = monthlyConfigs[monthlyConfigId];
+  const holidays = useMemo(() => new Set(currentMonthData?.holidays ?? []), [currentMonthData]);
 
+  // EFFECT: Subscribe to the current month's data when the component mounts or month changes.
   useEffect(() => {
-    if (!firestore) return;
-    setIsMonthlyConfigLoading(true);
-    const monthlyConfigRef = doc(firestore, 'monthlyConfigs', monthlyConfigId);
-    const unsubscribe = onSnapshot(monthlyConfigRef, (doc) => {
-        const data = doc.data();
-        setHolidays(new Set(data?.holidays ?? []));
-        setIsMonthlyConfigLoading(false);
-    });
-    return () => unsubscribe();
-  }, [firestore, monthlyConfigId]);
+    subscribeToMonth(monthlyConfigId);
+  }, [monthlyConfigId, subscribeToMonth]);
 
   const allDaysInMonth = useMemo(() => eachDayOfInterval({ 
       start: startOfMonth(currentMonth), 
@@ -87,11 +79,9 @@ function MonthlyConfigCalendar() {
   }, [allDaysInMonth, holidays, schoolConfig]);
 
   const handleDayToggle = async (day: Date, checked: boolean) => {
-    if (!firestore) return;
-    setIsSavingMonth(true);
-
-    const newHolidays = new Set(holidays);
+    setIsSaving(true);
     const dayString = format(day, 'yyyy-MM-dd');
+    const newHolidays = new Set(holidays);
 
     if (checked) {
       newHolidays.add(dayString);
@@ -99,33 +89,26 @@ function MonthlyConfigCalendar() {
       newHolidays.delete(dayString);
     }
 
-    setHolidays(newHolidays);
-
     const recurringOffDays: number[] = schoolConfig?.offDays ?? [0, 6];
     const newWorkDays = allDaysInMonth.filter(d => 
         !recurringOffDays.includes(d.getDay()) && !newHolidays.has(format(d, 'yyyy-MM-dd'))
     ).length;
-    
-    try {
-        const monthlyRef = doc(firestore, 'monthlyConfigs', monthlyConfigId);
-        await setDoc(monthlyRef, { 
-            id: monthlyConfigId,
-            holidays: Array.from(newHolidays),
-            workDays: newWorkDays
-        }, { merge: true });
 
-        toast({ title: "Libur Diperbarui", description: `Perubahan untuk ${format(day, 'd MMMM')} telah disimpan.` });
-    } catch (error) {
-        console.error("Failed to update holiday:", error);
-        toast({ variant: "destructive", title: "Gagal Menyimpan", description: "Gagal memperbarui hari libur, silakan coba lagi." });
-        setHolidays(holidays);
+    try {
+      // Instead of writing to DB directly, we now call the context's update function.
+      await updateHolidaysForMonth(monthlyConfigId, Array.from(newHolidays), newWorkDays);
+      toast({ title: "Libur Diperbarui", description: `Perubahan untuk ${format(day, 'd MMMM')} disimpan.` });
+    } catch (error) { 
+      console.error("Failed to update holiday via context:", error);
+      toast({ variant: "destructive", title: "Gagal Menyimpan", description: `Gagal memperbarui hari libur. Error: ${error}` });
     } finally {
-        setIsSavingMonth(false);
+      setIsSaving(false);
     }
   };
   
-  const isLoading = isSchoolConfigLoading || isMonthlyConfigLoading;
+  const isLoading = isMonthlyConfigLoading(monthlyConfigId) || !schoolConfig;
 
+  // --- UI RENDER ---
   return (
     <Card>
         <CardHeader>
@@ -134,7 +117,7 @@ function MonthlyConfigCalendar() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2 space-y-4">
-                {isLoading ? <div className="w-full h-full flex items-center justify-center bg-muted rounded-md p-10"><Loader2 className="h-8 w-8 animate-spin" /></div> : <> 
+                {isLoading && !currentMonthData ? <div className="w-full h-full flex items-center justify-center bg-muted rounded-md p-10"><Loader2 className="h-8 w-8 animate-spin" /></div> : <> 
                     <div className="flex items-center justify-center gap-4">
                         <Button variant="outline" size="icon" onClick={() => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}><ChevronLeft /></Button>
                         <span className="font-semibold text-center w-32">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
@@ -148,7 +131,7 @@ function MonthlyConfigCalendar() {
                                 const isRecurringOff = (schoolConfig?.offDays ?? [0, 6]).includes(day.getDay());
                                 return (
                                     <TableRow key={dayString} className={`has-[:checked]:bg-primary/10 ${isRecurringOff ? 'bg-muted/50 text-muted-foreground' : ''}`}>
-                                        <TableCell className="w-12 text-center py-2"><Checkbox id={dayString} checked={isChecked || isRecurringOff} disabled={isRecurringOff || isSavingMonth} onCheckedChange={(checked) => handleDayToggle(day, !!checked)} /></TableCell>
+                                        <TableCell className="w-12 text-center py-2"><Checkbox id={dayString} checked={isChecked || isRecurringOff} disabled={isRecurringOff || isSaving} onCheckedChange={(checked) => handleDayToggle(day, !!checked)} /></TableCell>
                                         <TableCell className="py-2"><Label htmlFor={dayString} className={`w-full block ${isRecurringOff ? 'cursor-not-allowed' : 'cursor-pointer'}`}>{format(day, 'eeee, d MMMM yyyy', { locale: id })}</Label></TableCell>
                                     </TableRow>
                                 );
@@ -162,7 +145,7 @@ function MonthlyConfigCalendar() {
                 <p className="text-sm text-muted-foreground">Jumlah hari kerja efektif di bulan <span className="font-bold">{format(currentMonth, 'MMMM', { locale: id })}</span> akan digunakan untuk menghitung persentase kehadiran.</p>
                 <div className="space-y-2">
                     <Label>Jumlah Hari Kerja Efektif</Label>
-                    <div className="flex items-center h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm select-none">{isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : calculatedWorkDays}</div>
+                    <div className="flex items-center h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm select-none">{isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (currentMonthData?.workDays ?? calculatedWorkDays)}</div>
                     <p className="text-xs text-muted-foreground">Dihitung otomatis dan disimpan secara real-time.</p>
                 </div>
             </div>
@@ -171,6 +154,9 @@ function MonthlyConfigCalendar() {
   );
 }
 
+// =======================================================================================
+// Original Configuration Page Component (Largely Unchanged)
+// =======================================================================================
 export default function KonfigurasiAbsenPage() {
   const { toast } = useToast();
   const firestore = useFirestore();
