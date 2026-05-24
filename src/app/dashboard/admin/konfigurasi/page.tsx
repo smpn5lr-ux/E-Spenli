@@ -18,7 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { Download, Loader2, RefreshCw, LocateFixed, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useDoc, useMemoFirebase, useUser, setDocumentNonBlocking } from '@/firebase';
-import { doc, setDoc, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, writeBatch, onSnapshot } from 'firebase/firestore'; // FIXED: onSnapshot is now imported
 import { useRouter } from 'next/navigation';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, eachDayOfInterval, startOfMonth, parseISO } from 'date-fns';
@@ -31,9 +31,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { useSettings } from '@/contexts/SettingsContext'; // IMPORT THE CENTRAL CONTEXT
-
-// --- CONSTANTS (can be moved to a separate file if needed) ---
+import { useSettings } from '@/contexts/SettingsContext';
 
 const daysOfWeek = [
     { value: 0, label: 'Minggu' }, { value: 1, label: 'Senin' }, { value: 2, label: 'Selasa' }, 
@@ -51,8 +49,6 @@ const statusKeyToLabelMap: { [key: string]: string } = {
     no_check_out: 'Hanya Absen Masuk (Tanpa Pulang)',
 };
 
-// --- REFACTORED CHILD COMPONENT: MonthlyConfigCalendar ---
-
 function MonthlyConfigCalendar() {
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -65,7 +61,6 @@ function MonthlyConfigCalendar() {
 
   const monthlyConfigId = useMemo(() => format(currentMonth, 'yyyy-MM'), [currentMonth]);
 
-  // Effect to listen for real-time updates for the current month
   useEffect(() => {
     if (!firestore) return;
     setIsMonthlyConfigLoading(true);
@@ -104,10 +99,8 @@ function MonthlyConfigCalendar() {
       newHolidays.delete(dayString);
     }
 
-    // Immediately update the local state for a responsive UI
     setHolidays(newHolidays);
 
-    // Recalculate work days with the new holiday set
     const recurringOffDays: number[] = schoolConfig?.offDays ?? [0, 6];
     const newWorkDays = allDaysInMonth.filter(d => 
         !recurringOffDays.includes(d.getDay()) && !newHolidays.has(format(d, 'yyyy-MM-dd'))
@@ -125,7 +118,6 @@ function MonthlyConfigCalendar() {
     } catch (error) {
         console.error("Failed to update holiday:", error);
         toast({ variant: "destructive", title: "Gagal Menyimpan", description: "Gagal memperbarui hari libur, silakan coba lagi." });
-        // Revert UI change on failure
         setHolidays(holidays);
     } finally {
         setIsSavingMonth(false);
@@ -179,21 +171,18 @@ function MonthlyConfigCalendar() {
   );
 }
 
-// --- REFACTORED MAIN PAGE COMPONENT ---
-
 export default function KonfigurasiAbsenPage() {
   const { toast } = useToast();
   const firestore = useFirestore();
   const { user, isUserLoading: isAuthLoading } = useUser();
   const router = useRouter();
-  const { schoolConfig, isSettingsLoading } = useSettings(); // Get global config
+  const { schoolConfig, isSettingsLoading } = useSettings(); 
   
   const [isSaving, setIsSaving] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [isQrLoading, setIsQrLoading] = useState(true);
 
-  // State for forms - now only for general settings
   const [isAttendanceActive, setIsAttendanceActive] = useState(true);
   const [offDays, setOffDays] = useState<number[]>([]);
   const [useLocationValidation, setUseLocationValidation] = useState(true);
@@ -211,12 +200,10 @@ export default function KonfigurasiAbsenPage() {
   const isLoading = isAuthLoading || isSettingsLoading || isUserDataLoading;
   const isAdmin = !isLoading && userData?.role === 'admin';
 
-  // Effect to redirect non-admins
   useEffect(() => {
     if (!isLoading && !isAdmin) router.replace('/dashboard');
   }, [isLoading, isAdmin, router]);
 
-  // Effect to populate form state from the global settings context
   useEffect(() => {
     if (schoolConfig) {
       setIsAttendanceActive(schoolConfig.isAttendanceActive ?? true);
@@ -232,7 +219,6 @@ export default function KonfigurasiAbsenPage() {
     }
   }, [schoolConfig]);
 
-  // QR Code Generation Effect
   useEffect(() => {
     if (qrCodeValue) {
       setIsQrLoading(true);
@@ -248,8 +234,6 @@ export default function KonfigurasiAbsenPage() {
         setIsQrLoading(!isSettingsLoading);
     }
   }, [qrCodeValue, toast, isSettingsLoading]);
-  
-  // --- Handlers ---
 
   const handleGenerateNewQr = () => {
     if (!firestore) return;
@@ -276,7 +260,6 @@ export default function KonfigurasiAbsenPage() {
     );
   };
 
-  // handleSave is now SIMPLER. It only saves general settings.
   const handleSave = async () => {
     if (!firestore) return;
     setIsSaving(true);
@@ -312,7 +295,7 @@ export default function KonfigurasiAbsenPage() {
   if (isLoading) {
     return <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   }
-  if (!isAdmin) return null; // Redirect is handled by useEffect
+  if (!isAdmin) return null;
 
   return (
     <TooltipProvider>
@@ -322,7 +305,6 @@ export default function KonfigurasiAbsenPage() {
             <p className="text-sm text-muted-foreground">Atur parameter fundamental, hari libur rutin, dan hari libur bulanan untuk sistem absensi.</p>
         </div>
 
-      {/* General Settings Cards */}
       <Card>
         <CardHeader><CardTitle>Pengaturan Umum</CardTitle></CardHeader>
         <CardContent className="p-6 space-y-4">
@@ -371,10 +353,8 @@ export default function KonfigurasiAbsenPage() {
         </CardContent>
       </Card>
 
-      {/* Refactored Monthly Holiday Settings Component */}
       <MonthlyConfigCalendar />
       
-      {/* QR Code Card */}
        <Card>
           <CardHeader className="p-4 sm:p-6"><CardTitle>QR Code Absensi</CardTitle></CardHeader>
           <CardContent className="flex flex-col items-center justify-center gap-4 p-4 sm:p-6">
@@ -386,7 +366,6 @@ export default function KonfigurasiAbsenPage() {
           </CardContent>
         </Card>
 
-      {/* Save Button now only saves GENERAL settings */}
       <div className="fixed bottom-20 right-6 z-50 md:bottom-6">
           <Button size="lg" onClick={handleSave} disabled={isSaving}>
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Pengaturan Umum
