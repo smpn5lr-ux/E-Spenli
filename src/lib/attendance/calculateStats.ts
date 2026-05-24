@@ -2,14 +2,13 @@
 
 import { collection, getDocs, query, where, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval } from 'date-fns';
-import { id as localeId } from 'date-fns/locale';
 
 const mapLeaveTypeToStatusKey = (leaveType: string): string => {
     switch(leaveType) {
-        case 'Sakit': return 'permission'; // Assuming 'Sakit' and 'Izin' use the same weight key
+        case 'Sakit': return 'sick';
         case 'Izin': return 'permission';
         case 'Dinas': return 'official_duty';
-        default: return 'absent'; // Default to absent if type is unknown
+        default: return 'absent';
     }
 };
 
@@ -29,7 +28,7 @@ export async function calculateMultipleUserStats(firestore: any, users: any[], m
     const monthEnd = endOfMonth(month);
 
     const activeDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd }).filter(day => {
-        const offDays = schoolConfig.offDays ?? [0, 6]; // Default Saturday, Sunday
+        const offDays = schoolConfig.offDays ?? [0, 6];
         return !offDays.includes(day.getDay());
     }).length;
 
@@ -50,14 +49,14 @@ export async function calculateMultipleUserStats(firestore: any, users: any[], m
         ]);
 
         const attendanceRecords = new Map(attendanceSnapshot.docs.map(doc => [doc.id, doc.data()]));
-        const leaveRecords = new Map();
+        const leaveRecords = new Map<string, string>();
         leaveSnapshot.docs.forEach(docSnap => {
             const leave = docSnap.data();
             const startDate = (leave.startDate as Timestamp).toDate();
             const endDate = (leave.endDate as Timestamp).toDate();
             eachDayOfInterval({ start: startDate, end: endDate }).forEach(day => {
                 if (isWithinInterval(day, { start: monthStart, end: monthEnd })) {
-                    leaveRecords.set(format(day, 'yyyy-MM-dd'), leave.type); // e.g., 'Izin', 'Sakit'
+                    leaveRecords.set(format(day, 'yyyy-MM-dd'), leave.type);
                 }
             });
         });
@@ -70,22 +69,23 @@ export async function calculateMultipleUserStats(firestore: any, users: any[], m
             const dayOfWeek = day.getDay();
 
             if ((schoolConfig.offDays ?? [0, 6]).includes(dayOfWeek)) {
-                return; // Skip off-days
+                return;
             }
-
-            let statusKey: string;
 
             const record = attendanceRecords.get(dayStr);
             const leaveType = leaveRecords.get(dayStr);
+
+            let statusKey: string;
 
             if (record) {
                 statusKey = record.statusKey || 'present';
                 if (statusKey === 'present') totalHadir++;
             } else if (leaveType) {
                 statusKey = mapLeaveTypeToStatusKey(leaveType);
-                if (leaveType === 'Izin') totalIzin++;
-                else if (leaveType === 'Sakit') totalSakit++;
-                else if (leaveType === 'Dinas') totalDinas++;
+                 if (statusKey === 'permission') totalIzin++;
+                 else if (statusKey === 'sick') totalSakit++;
+                 else if (statusKey === 'official_duty') totalDinas++;
+                 else totalAlpa++;
             } else {
                 statusKey = 'absent';
                 totalAlpa++;
@@ -103,10 +103,11 @@ export async function calculateMultipleUserStats(firestore: any, users: any[], m
             nip: user.nip,
             role: user.role,
             totalHadir,
-            totalIzin: totalIzin + totalDinas, // Combine Izin and Dinas for display as requested previously
+            totalIzin,
             totalSakit,
+            totalDinas,
             totalAlpa,
-            percentage: Math.min(100, percentage), // Cap at 100%
+            percentage: Math.min(100, percentage),
         };
     });
 

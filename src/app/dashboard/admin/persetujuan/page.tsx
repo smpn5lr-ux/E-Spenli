@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { useDoc } from '@/firebase/firestore/use-doc';
-import { collection, query, where, doc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, query, where, doc, updateDoc, serverTimestamp, Timestamp, getDocs, collectionGroup } from 'firebase/firestore';
 import { PageWrapper } from '@/components/layout/page-wrapper';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { format, isToday, startOfDay } from 'date-fns';
+import { format, isToday } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Check, X, Loader2, Info, ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -72,12 +72,8 @@ export default function PersetujuanPage() {
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const { data: userData, isLoading: isUserDataLoading } = useDoc(user, userDocRef);
 
-  const leaveRequestsQuery = useMemoFirebase(() => {
-      if (!firestore) return null;
-      return query(collection(firestore, 'leaveRequests'));
-  }, [firestore]);
-
-  const { data: leaveRequests, isLoading: isLeaveRequestsLoading } = useCollection<LeaveRequest>(user, leaveRequestsQuery);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [isLeaveRequestsLoading, setIsLeaveRequestsLoading] = useState(true);
 
   const isLoading = isAuthLoading || isUserDataLoading;
   const isAdmin = !isLoading && userData?.role === 'admin';
@@ -87,6 +83,49 @@ export default function PersetujuanPage() {
       router.replace('/dashboard');
     }
   }, [isLoading, isAdmin, router]);
+  
+  useEffect(() => {
+    if (!isAdmin || !firestore) {
+      setIsLeaveRequestsLoading(false);
+      return;
+    }
+
+    const fetchLeaveRequests = async () => {
+      setIsLeaveRequestsLoading(true);
+      try {
+        const q = query(collectionGroup(firestore, 'leaveRequests'));
+        const snapshot = await getDocs(q);
+        const usersSnapshot = await getDocs(query(collection(firestore, 'users')));
+        const userMap = new Map(usersSnapshot.docs.map(d => [d.id, d.data().name]));
+
+        const requests: LeaveRequest[] = snapshot.docs.map(doc => {
+          const data = doc.data();
+          const userId = doc.ref.parent.parent!.id;
+          return {
+            id: doc.id,
+            userId: userId,
+            userName: userMap.get(userId) || 'Nama Tidak Ditemukan',
+            type: data.type,
+            startDate: data.startDate,
+            reason: data.reason,
+            status: data.status,
+            proofUrl: data.proofUrl,
+            processedAt: data.processedAt,
+            processedBy: data.processedBy,
+          }
+        });
+        setLeaveRequests(requests);
+      } catch (error) {
+        console.error("Error fetching leave requests: ", error);
+        toast({ variant: "destructive", title: "Gagal Memuat Data", description: "Gagal mengambil data pengajuan izin dari database." });
+      } finally {
+        setIsLeaveRequestsLoading(false);
+      }
+    };
+
+    fetchLeaveRequests();
+  }, [isAdmin, firestore, toast]);
+
 
   const pendingRequests = useMemo(() => 
     leaveRequests?.filter(req => req.status === 'pending').sort((a, b) => a.startDate.toMillis() - b.startDate.toMillis()) || [],
@@ -99,19 +138,22 @@ export default function PersetujuanPage() {
     [leaveRequests]
   );
 
-  const handleProcessRequest = async (requestId: string, newStatus: 'approved' | 'rejected') => {
+  const handleProcessRequest = async (request: LeaveRequest, newStatus: 'approved' | 'rejected') => {
     if (!user || !firestore) return;
-    setProcessingId(requestId);
+    setProcessingId(request.id);
     try {
-      const requestRef = doc(firestore, 'leaveRequests', requestId);
+      const requestRef = doc(firestore, 'users', request.userId, 'leaveRequests', request.id);
       await updateDoc(requestRef, {
         status: newStatus,
         processedAt: serverTimestamp(),
         processedBy: user.displayName || user.email,
       });
+      
+      setLeaveRequests(prev => prev.map(r => r.id === request.id ? { ...r, status: newStatus } : r));
+
       toast({
         title: `Pengajuan ${newStatus === 'approved' ? 'Disetujui' : 'Ditolak'}`,
-        description: `Status pengajuan telah berhasil diperbarui.`,
+        description: `Status pengajuan dari ${request.userName} telah berhasil diperbarui.`,
       });
     } catch (error) {
       console.error('Error processing leave request:', error);
@@ -168,10 +210,10 @@ export default function PersetujuanPage() {
                                             <TableCell>{format(req.startDate.toDate(), 'd MMM yyyy', { locale: id })}</TableCell>
                                             <TableCell className="max-w-xs truncate">{req.reason}</TableCell>
                                             <TableCell className="text-center space-x-2">
-                                                <Button size="sm" variant="default" onClick={() => handleProcessRequest(req.id, 'approved')} disabled={!!processingId}>
+                                                <Button size="sm" variant="default" onClick={() => handleProcessRequest(req, 'approved')} disabled={!!processingId}>
                                                     {processingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                                                 </Button>
-                                                <Button size="sm" variant="destructive" onClick={() => handleProcessRequest(req.id, 'rejected')} disabled={!!processingId}>
+                                                <Button size="sm" variant="destructive" onClick={() => handleProcessRequest(req, 'rejected')} disabled={!!processingId}>
                                                      {processingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
                                                 </Button>
                                             </TableCell>

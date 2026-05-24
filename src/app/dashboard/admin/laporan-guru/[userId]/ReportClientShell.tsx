@@ -284,11 +284,11 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                           </div>
                           <div className="flex items-center space-x-2">
                             <RadioGroupItem value="izin" id={`izin-${day.id}`} />
-                            <Label htmlFor={`izin-${day.id}`}>Jadikan Izin</Label>
+                            <Label htmlFor={`izin-${day.id}`}>Jadikan Izin Pribadi</Label>
                           </div>
                           <div className="flex items-center space-x-2">
                             <RadioGroupItem value="dinas" id={`dinas-${day.id}`} />
-                            <Label htmlFor={`dinas-${day.id}`}>Jadikan Dinas</Label>
+                            <Label htmlFor={`dinas-${day.id}`}>Jadikan Izin Dinas</Label>
                           </div>
                         </RadioGroup>
                         {(changes[day.id] === 'sakit' || changes[day.id] === 'izin' || changes[day.id] === 'dinas') && (

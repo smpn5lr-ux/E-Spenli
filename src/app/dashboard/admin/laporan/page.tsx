@@ -25,6 +25,7 @@ interface UserStat {
   totalHadir: number;
   totalIzin: number;
   totalSakit: number;
+  totalDinas: number;
   totalAlpa: number;
   percentage: number;
 }
@@ -50,7 +51,7 @@ export default function AdminLaporanPage() {
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(u => (u as any).role !== 'admin');
       const userStats = await calculateMultipleUserStats(firestore, users, currentMonth);
-      setStats(userStats);
+      setStats(userStats as UserStat[]);
     } catch (error) {
       console.error("Error fetching summary report:", error);
       toast({ title: "Gagal Memuat Laporan", description: "Terjadi kesalahan saat mengambil data.", variant: "destructive" });
@@ -133,7 +134,7 @@ export default function AdminLaporanPage() {
 
           <div className="border rounded-md overflow-x-auto">
             <Table>
-              <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead className="text-center">Hadir</TableHead><TableHead className="text-center">Sakit</TableHead><TableHead className="text-center">Izin/Dinas</TableHead><TableHead className="text-center">Alpa</TableHead><TableHead className="text-center">Persentase</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead className="text-center">Hadir</TableHead><TableHead className="text-center">Sakit</TableHead><TableHead className="text-center">Izin</TableHead><TableHead className="text-center">Dinas</TableHead><TableHead className="text-center">Alpa</TableHead><TableHead className="text-center">Persentase</TableHead><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
@@ -144,7 +145,8 @@ export default function AdminLaporanPage() {
                       <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
-                      <TableCell className="w-[120px] text-right"><Skeleton className="h-8 w-24 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-1/2 mx-auto" /></TableCell>
+                       <TableCell className="w-[120px] text-right"><Skeleton className="h-8 w-24 ml-auto" /></TableCell>
                     </TableRow>
                   ))
                 ) : filteredStats.length > 0 ? (
@@ -154,13 +156,14 @@ export default function AdminLaporanPage() {
                       <TableCell className="text-center">{stat.totalHadir}</TableCell>
                       <TableCell className="text-center">{stat.totalSakit}</TableCell>
                       <TableCell className="text-center">{stat.totalIzin}</TableCell>
+                      <TableCell className="text-center">{stat.totalDinas}</TableCell>
                       <TableCell className="text-center text-destructive font-semibold">{stat.totalAlpa}</TableCell>
                       <TableCell className="text-center font-bold">{stat.percentage.toFixed(1)}%</TableCell>
                       <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => handleEdit(stat.userId)}><Edit className="h-4 w-4 mr-2"/>Detail</Button></TableCell>
                     </TableRow>
                   ))
                 ) : (
-                  <TableRow><TableCell colSpan={7} className="h-32 text-center">Tidak ada data untuk ditampilkan.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="h-32 text-center">Tidak ada data untuk ditampilkan.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

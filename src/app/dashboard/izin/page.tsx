@@ -36,7 +36,7 @@ const leaveRequestSchema = z.object({
   leaveDate: z.enum(['today', 'tomorrow'], {
     required_error: 'Tanggal pengajuan wajib dipilih.',
   }),
-  type: z.enum(['Izin Pulang Cepat', 'Sakit', 'Izin (pribadi)', 'Dinas Pagi', 'Dinas Siang', 'Dinas Full (1 Hari)'], {
+  type: z.enum(['Izin Pulang Cepat', 'Sakit', 'Izin', 'Dinas Pagi', 'Dinas Siang', 'Dinas Full (1 Hari)'], {
     required_error: 'Jenis pengajuan wajib dipilih.',
   }),
   reason: z.string().min(10, { message: 'Alasan harus diisi minimal 10 karakter.' }),
@@ -151,7 +151,7 @@ export default function IzinPage() {
 
         return [
             { value: 'Sakit', label: 'Sakit', disabled: fullDayLeaveDisabled },
-            { value: 'Izin (pribadi)', label: 'Izin (pribadi)', disabled: fullDayLeaveDisabled },
+            { value: 'Izin', label: 'Izin (pribadi)', disabled: fullDayLeaveDisabled },
             { value: 'Dinas Full (1 Hari)', label: 'Dinas Full (1 Hari)', disabled: fullDayLeaveDisabled },
             { value: 'Dinas Pagi', label: 'Dinas Pagi', disabled: fullDayLeaveDisabled },
             { value: 'Izin Pulang Cepat', label: 'Izin Pulang Cepat', disabled: partialLeaveDisabled },
