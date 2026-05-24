@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, ChevronLeft, ChevronRight, Loader2, Edit } from 'lucide-react';
 
 // Child Components
@@ -81,16 +81,14 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
         const attendanceMap = new Map(attendanceHistory.map(rec => [rec.id, rec]));
         const leaveMap = new Map<string, any>();
 
-        // THE DEFINITIVE FIX: Explicitly separate and prioritize data sources.
         const generalLeaves = leaveHistory.filter(l => l.manualEntry !== true);
         const manualAdminLeaves = leaveHistory.filter(l => l.manualEntry === true);
 
-        // 1. Process general leaves (approved by Headmaster) first.
         generalLeaves.forEach(leave => {
             if (leave.startDate?.toDate && leave.endDate?.toDate) {
                 try {
                     const interval = { start: leave.startDate.toDate(), end: leave.endDate.toDate() };
-                    if (isBefore(interval.end, interval.start)) return; // Skip invalid date ranges
+                    if (isBefore(interval.end, interval.start)) return;
 
                     eachDayOfInterval(interval).forEach(day => {
                         if (isWithinInterval(day, { start: monthStart, end: monthEnd })) {
@@ -103,12 +101,11 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
             }
         });
 
-        // 2. Process manual admin corrections LAST. This guarantees they overwrite any general data.
         manualAdminLeaves.forEach(leave => {
             if (leave.startDate?.toDate) {
                 const day = leave.startDate.toDate();
                  if (isWithinInterval(day, { start: monthStart, end: monthEnd })) {
-                    leaveMap.set(format(day, 'yyyy-MM-dd'), leave); // This set() call is the overwrite action.
+                    leaveMap.set(format(day, 'yyyy-MM-dd'), leave);
                 }
             }
         });
@@ -147,7 +144,6 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
         const validReport = report.filter(Boolean) as ReportDetail[];
         validReport.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-        // Calculate summary
         const summaryCalc = validReport.reduce((acc, item) => {
             const key = item.statusKey;
             acc[key] = (acc[key] || 0) + 1;
@@ -323,7 +319,7 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                     <CardHeader>
                         <CardTitle>Rekap Kehadiran Bulan Ini</CardTitle>
                         <CardDescription>Ringkasan total kehadiran, alpa, izin, dan sakit selama bulan berjalan.</CardDescription>
-                    </Header>
+                    </CardHeader>
                     <CardContent>
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <SummaryItem label="Hadir" value={summary.present} />
@@ -337,7 +333,7 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                     <CardHeader>
                         <CardTitle>Detail Laporan Harian</CardTitle>
                         <CardDescription>Rincian data kehadiran harian yang terekam oleh sistem. Klik ikon pensil untuk memperbaiki status yang salah.</CardDescription>
-                    </Header>
+                    </CardHeader>
                     <CardContent>
                         <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
                            <div className="flex items-center gap-2">
@@ -355,7 +351,16 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                         </div>
                         <div className="overflow-x-auto border rounded-md">
                             <Table>
-                                <TableHeader></TableHeader>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Tanggal</TableHead>
+                                        <TableHead>Masuk</TableHead>
+                                        <TableHead>Pulang</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Keterangan</TableHead>
+                                        <TableHead className="text-right">Aksi</TableHead>
+                                    </TableRow>
+                                </TableHeader>
                                 <TableBody>
                                     {isLoading ? (
                                         <TableRow><TableCell colSpan={6} className="h-36 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /><p className="mt-2 text-muted-foreground">Memuat data...</p></TableCell></TableRow>
