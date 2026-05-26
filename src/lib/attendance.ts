@@ -116,13 +116,31 @@ export async function fetchUserMonthlyReportData(
                 date: day, 
                 status: 'Izin', 
                 keterangan: leaveRecord.reason || keteranganLabel, 
-                leaveType: leaveType, // <-- Pass the original type
+                leaveType: leaveType, // Pass the original type
                 isCancellable: isAfter(leaveRecord.startDate.toDate(), today) 
             };
         } else if (attendanceRecord?.adminEdited) {
             const desc = (attendanceRecord.description || '').toLowerCase();
             const isIzin = ['izin', 'sakit', 'dinas'].some(k => desc.includes(k));
-            recordForDay = { id: attendanceRecord.id, date: day, status: isIzin ? 'Izin' : 'Hadir', keterangan: attendanceRecord.description || labels[LABEL_KEYS.ADMIN_CORRECTION], checkInTime: isIzin ? undefined : attendanceRecord.checkInTime, checkOutTime: isIzin ? undefined : attendanceRecord.checkOutTime };
+            let leaveType: string | undefined = undefined;
+            if (isIzin) {
+                if (desc.includes('dinas')) {
+                    leaveType = 'dinas';
+                } else if (desc.includes('sakit')) {
+                    leaveType = 'sakit';
+                } else if (desc.includes('izin')) {
+                    leaveType = 'izin';
+                }
+            }
+            recordForDay = { 
+                id: attendanceRecord.id, 
+                date: day, 
+                status: isIzin ? 'Izin' : 'Hadir', 
+                keterangan: attendanceRecord.description || labels[LABEL_KEYS.ADMIN_CORRECTION], 
+                checkInTime: isIzin ? undefined : attendanceRecord.checkInTime, 
+                checkOutTime: isIzin ? undefined : attendanceRecord.checkOutTime,
+                leaveType: leaveType // Set the leaveType for admin edits
+            };
         } else if (attendanceRecord) {
             let keterangan = labels[LABEL_KEYS.PRESENT];
             if (attendanceRecord.isLate) keterangan = labels[LABEL_KEYS.LATE];
@@ -194,7 +212,6 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
     const schoolConfig = schoolConfigSnap.data() || {};
     const monthlyConfig = monthlyConfigSnap.data();
 
-    // 1. Calculate total effective work days for the entire month
     const allDaysInMonth = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
     const offDays = schoolConfig?.offDays ?? [0, 6];
     const holidays = monthlyConfig?.holidays ?? [];
@@ -203,10 +220,8 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
         return !offDays.includes(day.getDay()) && !holidays.includes(dayStr);
     }).length;
 
-    // 2. Fetch the attendance records for days that have passed
     const dailyStatuses = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfig, monthlyConfig);
     
-    // 3. Calculate score based on the records
     const weights = { ...DEFAULT_WEIGHTS, ...schoolConfig.attendanceWeights };
     const labels = { ...DEFAULT_LABELS, ...schoolConfig?.reportLabels };
     let totalScore = 0;
@@ -220,10 +235,12 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
                 else if (record.keterangan === labels[LABEL_KEYS.NO_CHECK_IN]) points = weights.no_check_in;
                 else points = weights.present;
             } else if (record.status === 'Izin') {
-                // Use the new reliable field `leaveType` instead of fragile `keterangan`
-                if (record.leaveType?.includes('dinas')) {
+                const leaveType = record.leaveType || '';
+                if (leaveType.includes('dinas')) {
                     points = weights.official_duty;
-                } else { // Covers 'sakit' and regular 'izin'
+                } else if (leaveType === 'sakit') {
+                    points = weights.sick;
+                } else { // This covers 'izin' (pribadi) and other undefined leave types
                     points = weights.permission;
                 }
             }
@@ -231,19 +248,17 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
         }
     });
 
-    // 4. Calculate the CORRECT percentage using total effective days as the denominator
     const percentage = totalEffectiveWorkDays > 0 ? (totalScore / totalEffectiveWorkDays) * 100 : 0;
 
-    // 5. Count totals for the report table (Hadir, Izin, Sakit, Alpa)
     let totalHadir = 0, totalIzin = 0, totalSakit = 0, totalAlpa = 0;
     dailyStatuses.forEach(report => {
         if (report.status === 'Hadir') {
             totalHadir++;
         } else if (report.status === 'Izin') {
-            // Use the new reliable field `leaveType` for counting
-            if (report.leaveType === 'sakit') {
+            const leaveType = report.leaveType || '';
+            if (leaveType === 'sakit') {
                 totalSakit++;
-            } else { // This groups 'izin' and 'dinas' into the 'Izin' column for the UI
+            } else { // This groups 'izin' (pribadi) and 'dinas' into the 'Izin' column for the UI
                 totalIzin++;
             }
         }
@@ -257,7 +272,7 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
         totalIzin, 
         totalSakit, 
         totalAlpa, 
-        percentage: Math.min(100, Math.max(0, percentage)), // Clamp percentage between 0 and 100
+        percentage: Math.min(100, Math.max(0, percentage)),
         dailyStatuses
     };
 }

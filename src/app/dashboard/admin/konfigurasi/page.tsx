@@ -419,7 +419,11 @@ export default function KonfigurasiAbsenPage() {
                   <Input id="weight-no_check_in" type="number" step="0.05" min="0" max="1" value={attendanceWeights.no_check_in} onChange={e => handleWeightChange('no_check_in', e.target.value)} />
               </div>
               <div className="space-y-2">
-                  <Label htmlFor="weight-permission">Izin / Sakit</Label>
+                  <Label htmlFor="weight-sick">Sakit</Label>
+                  <Input id="weight-sick" type="number" step="0.05" min="0" max="1" value={attendanceWeights.sick} onChange={e => handleWeightChange('sick', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                  <Label htmlFor="weight-permission">Izin Pribadi</Label>
                   <Input id="weight-permission" type="number" step="0.05" min="0" max="1" value={attendanceWeights.permission} onChange={e => handleWeightChange('permission', e.target.value)} />
               </div>
               <div className="space-y-2">
