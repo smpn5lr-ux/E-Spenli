@@ -165,16 +165,13 @@ export default function UserReportDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // --- DEFINITIVE FIX: Fetch all required configs explicitly ---
     const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
     const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc(currentUser, schoolConfigRef);
 
     const monthlyConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'monthlyConfigs', format(currentMonth, 'yyyy-MM')) : null, [firestore, currentMonth]);
     const { data: monthlyConfigData, isLoading: isMonthlyConfigLoading } = useDoc(currentUser, monthlyConfigRef);
-    // --- END FIX ---
 
     const fetchReport = useCallback(async () => {
-        // --- DEFINITIVE FIX: Add guard clauses for all dependencies ---
         if (!firestore || !userId || !currentUser || !schoolConfigData || !monthlyConfigData) {
             return; 
         }
@@ -193,7 +190,6 @@ export default function UserReportDetailPage() {
               setUserData(userSnap.data());
             }
 
-            // --- DEFINITIVE FIX: Pass all configs to the data fetching function ---
             const reportData = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfigData, monthlyConfigData);
             setMonthlyReportData(reportData);
 
@@ -211,7 +207,6 @@ export default function UserReportDetailPage() {
 
     const handleDownloadPdf = async () => { /* PDF generation logic */ };
 
-    // --- DEFINITIVE FIX: Include all loading states ---
     const pageIsLoading = isLoading || isUserLoading || isConfigLoading || isMonthlyConfigLoading;
     const isAdmin = currentUser?.role === 'admin';
 
@@ -251,14 +246,14 @@ export default function UserReportDetailPage() {
                     <div className="overflow-x-auto border rounded-md">
                         <Table>
                             <TableHeader>
-                                <TableRow>
-                                    <TableHead className="w-[5%]">No</TableHead>
-                                    <TableHead className="w-[25%]">Tanggal</TableHead>
-                                    <TableHead className="w-[15%]">Jam Masuk</TableHead>
-                                    <TableHead className="w-[15%]">Jam Pulang</TableHead>
-                                    <TableHead className="w-[15%]">Status</TableHead>
-                                    <TableHead>Keterangan</TableHead>
-                                    {isAdmin && <TableHead className="w-[10%] text-center">Aksi</TableHead>}
+                                <TableRow className="bg-primary text-primary-foreground hover:bg-primary/90">
+                                    <TableHead className="w-[5%] text-white">No</TableHead>
+                                    <TableHead className="w-[25%] text-white">Tanggal</TableHead>
+                                    <TableHead className="w-[15%] text-white">Jam Masuk</TableHead>
+                                    <TableHead className="w-[15%] text-white">Jam Pulang</TableHead>
+                                    <TableHead className="w-[15%] text-white">Status</TableHead>
+                                    <TableHead className="text-white">Keterangan</TableHead>
+                                    {isAdmin && <TableHead className="w-[10%] text-center text-white">Aksi</TableHead>}
                                 </TableRow>
                             </TableHeader>
                             <TableBody>

@@ -430,20 +430,20 @@ export default function SchoolReportPage() {
                         ) : (
                             <Table>
                                 <TableHeader>
-                                    <TableRow>
-                                        <TableHead className="w-[50px]">No</TableHead>
-                                        <TableHead>Nama</TableHead>
-                                        <TableHead>NIP</TableHead>
-                                        <TableHead>Status Kepegawaian</TableHead>
-                                        <TableHead className="text-center">Hadir</TableHead>
-                                        <TableHead className="text-center">Izin</TableHead>
-                                        <TableHead className="text-center">Sakit</TableHead>
-                                        <TableHead className="text-center">Alpa</TableHead>
-                                        <TableHead className="text-center">Persentase</TableHead>
+                                    <TableRow className="bg-primary text-primary-foreground hover:bg-primary/90">
+                                        <TableHead className="w-[50px] text-white">No</TableHead>
+                                        <TableHead className="text-white">Nama</TableHead>
+                                        <TableHead className="text-white">NIP</TableHead>
+                                        <TableHead className="text-white">Status Kepegawaian</TableHead>
+                                        <TableHead className="text-center text-white">Hadir</TableHead>
+                                        <TableHead className="text-center text-white">Izin</TableHead>
+                                        <TableHead className="text-center text-white">Sakit</TableHead>
+                                        <TableHead className="text-center text-white">Alpa</TableHead>
+                                        <TableHead className="text-center text-white">Persentase</TableHead>
                                         {user.role === 'admin' && (
                                             <>
-                                                <TableHead className="w-[50px] text-center">Opsi</TableHead>
-                                                <TableHead className="w-[50px] text-center">Aksi</TableHead>
+                                                <TableHead className="w-[50px] text-center text-white">Opsi</TableHead>
+                                                <TableHead className="w-[50px] text-center text-white">Aksi</TableHead>
                                             </>
                                         )}
                                     </TableRow>

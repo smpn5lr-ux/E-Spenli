@@ -213,7 +213,7 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                         status: 'Hadir', // Tetap simpan status teks untuk kompatibilitas
                         statusKey: 'present', // **TAMBAHAN: Simpan statusKey secara eksplisit**
                         manualEntry: true,
-                        correctedBy: 'admin',
+                        correctedBy: 'admin', 
                         timestamp: serverTimestamp(),
                     });
                 } else if (typeMap[action]) {
@@ -328,13 +328,14 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
                         <div className="overflow-x-auto border rounded-md">
                             <Table>
                                 <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Tanggal</TableHead>
-                                        <TableHead>Masuk</TableHead>
-                                        <TableHead>Pulang</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Keterangan</TableHead>
-                                        <TableHead className="text-right">Aksi</TableHead>
+                                    {/* MODIFIED: Added blue background and white text */}
+                                    <TableRow className="bg-primary text-primary-foreground hover:bg-primary/90">
+                                        <TableHead className="text-white">Tanggal</TableHead>
+                                        <TableHead className="text-white">Masuk</TableHead>
+                                        <TableHead className="text-white">Pulang</TableHead>
+                                        <TableHead className="text-white">Status</TableHead>
+                                        <TableHead className="text-white">Keterangan</TableHead>
+                                        <TableHead className="text-right text-white">Aksi</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
