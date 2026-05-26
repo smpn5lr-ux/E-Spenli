@@ -26,6 +26,112 @@ import { id } from 'date-fns/locale';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
 
+// New Component for Attendance Weight Settings
+function AttendanceWeightSettings() {
+  const { toast } = useToast();
+  const firestore = useFirestore();
+  const weightRef = useMemoFirebase(() => doc(firestore, 'settings', 'attendanceWeight'), [firestore]);
+
+  const defaultWeights = {
+    hadir: 1,
+    terlambat: 0.75,
+    tidakAbsenPulang: 0.5,
+    tidakAbsenMasuk: 0.5,
+    izin: 0.5,
+    alpa: 0
+  };
+
+  const [weights, setWeights] = useState(defaultWeights);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchWeights = async () => {
+      if (!weightRef) return;
+      setIsLoading(true);
+      try {
+        const docSnap = await getDoc(weightRef);
+        if (docSnap.exists()) {
+          setWeights(docSnap.data() as typeof defaultWeights);
+        } else {
+          // If the document doesn't exist, we use the default weights already set in the state
+          console.log('Dokumen bobot tidak ditemukan, menggunakan nilai default.');
+        }
+      } catch (error) {
+        console.error("Error fetching weight settings: ", error);
+        toast({ variant: 'destructive', title: 'Gagal Memuat Bobot', description: 'Gagal mengambil data bobot dari server.' });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchWeights();
+  }, [weightRef, toast]);
+
+  const handleInputChange = (field: keyof typeof weights, value: string) => {
+    const numValue = value === '' ? '' : Number(value); // Allow empty string to clear input
+    if (numValue === '' || !isNaN(numValue as number)) {
+        setWeights(prev => ({ ...prev, [field]: numValue }));
+    }
+  };
+
+  const handleSave = async () => {
+    if (!weightRef) return;
+    setIsSaving(true);
+    try {
+      const finalWeights = Object.entries(weights).reduce((acc, [key, value]) => {
+        const num = Number(value);
+        acc[key as keyof typeof weights] = isNaN(num) ? 0 : num;
+        return acc;
+      }, {} as typeof defaultWeights);
+
+      await setDoc(weightRef, finalWeights);
+      toast({ title: 'Berhasil', description: 'Pengaturan bobot kehadiran berhasil disimpan.' });
+    } catch (error) {
+      console.error("Error saving weight settings: ", error);
+      toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: 'Gagal menyimpan pengaturan bobot ke server.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Manajemen Bobot Kehadiran</CardTitle>
+        <CardDescription>Atur bobot nilai untuk setiap status kehadiran. Nilai ini akan memengaruhi perhitungan persentase akhir.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-6">
+            {Object.keys(weights).map((key) => (
+              <div className="space-y-2" key={key}>
+                <Label htmlFor={`weight-${key}`} className="capitalize">
+                  {key.replace(/([A-Z])/g, ' $1').replace('tidakAbsen', 'Tidak Absen ')}
+                </Label>
+                <Input
+                  id={`weight-${key}`}
+                  type="number"
+                  step="0.01"
+                  value={weights[key as keyof typeof weights]}
+                  onChange={(e) => handleInputChange(key as keyof typeof weights, e.target.value)}
+                  placeholder="0.0"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="border-t p-4 sm:p-6">
+        <Button onClick={handleSave} disabled={isSaving || isLoading}>
+          {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Bobot Kehadiran
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
 const daysOfWeek = [
     { value: 0, label: 'Minggu' },
     { value: 1, label: 'Senin' },
@@ -372,6 +478,7 @@ export default function KonfigurasiAbsenPage() {
 
   return (
     <div className="space-y-6">
+        <AttendanceWeightSettings />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-1">
           <CardHeader className="p-4 sm:p-6">
