@@ -113,16 +113,13 @@ export default function SchoolReportPage() {
     const [editingUser, setEditingUser] = useState<ReportRowData | null>(null);
     const [refetchIndex, setRefetchIndex] = useState(0);
 
-    // --- DEFINITIVE FIX: Fetch ALL required configurations at the top level. ---
     const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
     const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc(user, schoolConfigRef);
 
     const monthlyConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'monthlyConfigs', format(currentMonth, 'yyyy-MM')) : null, [firestore, currentMonth]);
     const { data: monthlyConfigData, isLoading: isMonthlyConfigLoading } = useDoc(user, monthlyConfigRef);
-    // --- END FIX ---
 
     useEffect(() => {
-        // --- DEFINITIVE FIX: Add guards for ALL loading states. ---
         if (isUserLoading || !user || !firestore || isConfigLoading || isMonthlyConfigLoading) return;
         
         let isMounted = true;
@@ -140,8 +137,9 @@ export default function SchoolReportPage() {
 
                 const reportPromises = usersSnapshot.docs.map(async (userDoc) => {
                     const userData = userDoc.data();
-                    // --- DEFINITIVE FIX: Pass the fetched monthlyConfigData directly. ---
-                    const stats = await calculateAttendanceStats(firestore, userDoc.id, currentMonth, schoolConfigData, monthlyConfigData);
+                    // *** FINAL VERCEL BUILD FIX ***
+                    // The function now fetches its own config, so we must not pass it.
+                    const stats = await calculateAttendanceStats(firestore, userDoc.id, currentMonth);
                     
                     return {
                         uid: userDoc.id,
@@ -186,7 +184,6 @@ export default function SchoolReportPage() {
         loadData();
         
         return () => { isMounted = false; };
-    // --- DEFINITIVE FIX: Add all dependencies to the effect array. ---
     }, [user, isUserLoading, firestore, currentMonth, refetchIndex, schoolConfigData, isConfigLoading, monthlyConfigData, isMonthlyConfigLoading]);
     
     const monthName = format(currentMonth, 'MMMM yyyy', { locale: id });
@@ -287,14 +284,12 @@ export default function SchoolReportPage() {
     };
 
     const handleDownloadUserPdf = async (targetUser: ReportRowData) => {
-        // --- DEFINITIVE FIX: Check all required data before proceeding. ---
         if (!firestore || !schoolConfigData) return;
         const { jsPDF } = await import('jspdf');
         const autoTable = (await import('jspdf-autotable')).default;
         const doc = new jsPDF();
         
         try {
-            // --- DEFINITIVE FIX: Pass the correct monthlyConfigData. ---
             const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, monthlyConfigData);
             
             let startY = addReportHeader(doc);
@@ -335,10 +330,8 @@ export default function SchoolReportPage() {
     };
     
     const handleDownloadUserExcel = async (targetUser: ReportRowData) => {
-        // --- DEFINITIVE FIX: Check all required data before proceeding. ---
         if (!firestore || !schoolConfigData) return;
         try {
-            // --- DEFINITIVE FIX: Pass the correct monthlyConfigData. ---
             const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, monthlyConfigData);
             const kopSurat = [['PEMERINTAH KABUPATEN MANGGARAI'], ['DINAS PENDIDIKAN PEMUDA DAN OLAHRAGA'], ['SMP NEGERI 5 LANGKE REMBONG'], ['Alamat: Mando, Kelurahan compang carep, Kecamatan Langke Rembong'], [], ['LAPORAN KEHADIRAN'], [`Periode: ${monthName}`], []];
             const userInfo = [['Nama', `: ${targetUser.name}`], ['NIP', `: ${targetUser.nip || '-'}`], ['Status Kepegawaian', `: ${targetUser.position || '-'}`], []];
@@ -364,7 +357,6 @@ export default function SchoolReportPage() {
 
     const changeMonth = (amount: number) => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + amount, 1));
     
-    // --- DEFINITIVE FIX: Pass the correct monthlyConfigData to the modal. ---
     const handleEditClick = (userToEdit: ReportRowData) => { 
         setEditingUser(userToEdit); 
         setIsEditModalOpen(true); 
@@ -372,7 +364,7 @@ export default function SchoolReportPage() {
     const handleCloseModal = () => { 
         setIsEditModalOpen(false); 
         setEditingUser(null); 
-        setRefetchIndex(prev => prev + 1); // Trigger a data refresh
+        setRefetchIndex(prev => prev + 1);
     };
     
     const isLoading = isReportLoading || isUserLoading || isConfigLoading || isMonthlyConfigLoading;
@@ -384,15 +376,14 @@ export default function SchoolReportPage() {
     return (
         <PageWrapper>
             {isEditModalOpen && editingUser && (
-                 // --- DEFINITIVE FIX: Pass monthlyConfigData to the modal ---
                 <EditAttendanceModal 
                     user={editingUser} 
                     month={currentMonth} 
                     isOpen={isEditModalOpen} 
                     onClose={handleCloseModal} 
                     currentUser={user}
-                    schoolConfig={schoolConfigData} // Pass the loaded school config
-                    monthlyConfig={monthlyConfigData} // Pass the loaded monthly config
+                    schoolConfig={schoolConfigData}
+                    monthlyConfig={monthlyConfigData}
                 />
             )}
             
