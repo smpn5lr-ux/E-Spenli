@@ -54,35 +54,7 @@ export interface MonthlyReportData {
     checkInTime: string | null; checkOutTime: string | null; isCancellable?: boolean;
 }
 
-export function calculateAttendancePercentage(
-  records: MonthlyReportData[],
-  weights: { [key: string]: number } = DEFAULT_WEIGHTS
-) {
-  let totalScore = 0;
-  let nonAlpaDays = 0;
-
-  records.forEach((record) => {
-    if (record.status !== 'Alpa') {
-      nonAlpaDays++;
-      let points = 0;
-      if (record.status === 'Hadir') {
-        if (record.keterangan === DEFAULT_LABELS[LABEL_KEYS.LATE]) points = weights.late;
-        else if (record.keterangan === DEFAULT_LABELS[LABEL_KEYS.NO_CHECK_OUT]) points = weights.no_check_out;
-        else if (record.keterangan === DEFAULT_LABELS[LABEL_KEYS.NO_CHECK_IN]) points = weights.no_check_in;
-        else points = weights.present;
-      } else if (record.status === 'Izin') {
-        if (record.keterangan.toLowerCase().includes('dinas')) points = weights.official_duty;
-        else if (record.keterangan.toLowerCase().includes('sakit')) points = weights.sick ?? weights.permission;
-        else points = weights.permission;
-      }
-      totalScore += points;
-    }
-  });
-
-  if (nonAlpaDays === 0) return { score: 0, percentage: 0 };
-  const percentage = (totalScore / nonAlpaDays) * 100;
-  return { score: totalScore, percentage: Math.min(100, Math.max(0, percentage)) };
-}
+// The faulty calculateAttendancePercentage function has been removed.
 
 export async function fetchUserMonthlyReportData(
     firestore: Firestore,
@@ -213,13 +185,46 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
         getDoc(doc(firestore, 'monthlyConfigs', format(monthStart, 'yyyy-MM'))),
     ]);
     const schoolConfig = schoolConfigSnap.data() || {};
-    const monthlyConfig = monthlyConfigSnap.data(); // Will be undefined if doc doesn't exist.
+    const monthlyConfig = monthlyConfigSnap.data();
 
+    // 1. Calculate total effective work days for the entire month
+    const allDaysInMonth = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
+    const offDays = schoolConfig?.offDays ?? [0, 6];
+    const holidays = monthlyConfig?.holidays ?? [];
+    const totalEffectiveWorkDays = allDaysInMonth.filter(day => {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        return !offDays.includes(day.getDay()) && !holidays.includes(dayStr);
+    }).length;
+
+    // 2. Fetch the attendance records for days that have passed
     const dailyStatuses = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfig, monthlyConfig);
     
+    // 3. Calculate score based on the records
     const weights = { ...DEFAULT_WEIGHTS, ...schoolConfig.attendanceWeights };
-    const { percentage } = calculateAttendancePercentage(dailyStatuses, weights);
+    const labels = { ...DEFAULT_LABELS, ...schoolConfig?.reportLabels };
+    let totalScore = 0;
 
+    dailyStatuses.forEach((record) => {
+        if (record.status !== 'Alpa') {
+            let points = 0;
+            if (record.status === 'Hadir') {
+                if (record.keterangan === labels[LABEL_KEYS.LATE]) points = weights.late;
+                else if (record.keterangan === labels[LABEL_KEYS.NO_CHECK_OUT]) points = weights.no_check_out;
+                else if (record.keterangan === labels[LABEL_KEYS.NO_CHECK_IN]) points = weights.no_check_in;
+                else points = weights.present;
+            } else if (record.status === 'Izin') {
+                if (record.keterangan.toLowerCase().includes('dinas')) points = weights.official_duty;
+                else if (record.keterangan.toLowerCase().includes('sakit')) points = weights.sick ?? weights.permission;
+                else points = weights.permission;
+            }
+            totalScore += points;
+        }
+    });
+
+    // 4. Calculate the CORRECT percentage using total effective days as the denominator
+    const percentage = totalEffectiveWorkDays > 0 ? (totalScore / totalEffectiveWorkDays) * 100 : 0;
+
+    // 5. Count totals for the report table (Hadir, Izin, Sakit, Alpa)
     let totalHadir = 0, totalIzin = 0, totalSakit = 0, totalAlpa = 0;
     dailyStatuses.forEach(report => {
         if (report.status === 'Hadir') totalHadir++;
@@ -230,5 +235,12 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
         else if (report.status === 'Alpa') totalAlpa++;
     });
 
-    return { totalHadir, totalIzin, totalSakit, totalAlpa, percentage, dailyStatuses };
+    return {
+        totalHadir, 
+        totalIzin, 
+        totalSakit, 
+        totalAlpa, 
+        percentage: Math.min(100, Math.max(0, percentage)), // Clamp percentage between 0 and 100
+        dailyStatuses
+    };
 }
