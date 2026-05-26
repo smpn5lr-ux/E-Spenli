@@ -35,6 +35,7 @@ const DEFAULT_LABELS: { [key: string]: string } = {
 export const DEFAULT_WEIGHTS: { [key: string]: number } = {
   present: 1.0, late: 0.75, no_check_out: 0.5, no_check_in: 0.5, 
   sick: 0.75, permission: 0.5, official_duty: 1.0, absent: 0.0,
+  dinas_pagi: 0.5, dinas_siang: 0.5
 };
 
 interface RawAttendanceData {
@@ -236,8 +237,12 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
                 else points = weights.present;
             } else if (record.status === 'Izin') {
                 const leaveType = record.leaveType || '';
-                if (leaveType.includes('dinas')) {
-                    points = weights.official_duty;
+                if (leaveType.includes('dinas full')) {
+                  points = weights.official_duty;
+                } else if (leaveType.includes('dinas pagi')) {
+                  points = weights.dinas_pagi;
+                } else if (leaveType.includes('dinas siang')) {
+                  points = weights.dinas_siang;
                 } else if (leaveType === 'sakit') {
                     points = weights.sick;
                 } else { // This covers 'izin' (pribadi) and other undefined leave types

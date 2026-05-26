@@ -61,9 +61,6 @@ const withPWA = require("@ducanh2912/next-pwa").default({
       },
     ],
   },
-  fallbacks: {
-    document: false,
-  }
 });
 
 module.exports = withPWA(nextConfig);

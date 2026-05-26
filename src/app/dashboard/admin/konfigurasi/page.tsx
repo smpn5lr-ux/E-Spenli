@@ -427,8 +427,16 @@ export default function KonfigurasiAbsenPage() {
                   <Input id="weight-permission" type="number" step="0.05" min="0" max="1" value={attendanceWeights.permission} onChange={e => handleWeightChange('permission', e.target.value)} />
               </div>
               <div className="space-y-2">
-                  <Label htmlFor="weight-official_duty">Izin Dinas</Label>
+                  <Label htmlFor="weight-official_duty">Dinas Penuh (1 Hari)</Label>
                   <Input id="weight-official_duty" type="number" step="0.05" min="0" max="1" value={attendanceWeights.official_duty} onChange={e => handleWeightChange('official_duty', e.target.value)} />
+              </div>
+               <div className="space-y-2">
+                  <Label htmlFor="weight-dinas_pagi">Dinas Pagi</Label>
+                  <Input id="weight-dinas_pagi" type="number" step="0.05" min="0" max="1" value={attendanceWeights.dinas_pagi} onChange={e => handleWeightChange('dinas_pagi', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                  <Label htmlFor="weight-dinas_siang">Dinas Siang</Label>
+                  <Input id="weight-dinas_siang" type="number" step="0.05" min="0" max="1" value={attendanceWeights.dinas_siang} onChange={e => handleWeightChange('dinas_siang', e.target.value)} />
               </div>
               <div className="space-y-2">
                   <Label htmlFor="weight-absent">Alpa (0)</Label>

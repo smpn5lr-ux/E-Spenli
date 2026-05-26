@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation';
 import { Html5Qrcode, Html5QrcodeCameraScanConfig } from 'html5-qrcode';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MapPin, CheckCircle, Clock, X, Loader2, AlertTriangle, CameraOff, CalendarOff } from 'lucide-react';
+import { MapPin, CheckCircle, Clock, X, Loader2, AlertTriangle, CameraOff, CalendarOff, Info } from 'lucide-react';
 import { useUser, useFirestore, useDoc, useCollection, useMemoFirebase } from '@/firebase';
 import { doc, collection, query, where, Timestamp, addDoc, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { format, isBefore } from 'date-fns';
+import { format, isBefore, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import QuoteOfTheDay from '@/components/layout/quote-of-the-day';
 import { PageWrapper } from '@/components/layout/page-wrapper';
 
@@ -28,7 +28,7 @@ const getCurrentPosition = (options?: PositionOptions): Promise<GeolocationPosit
   new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, options));
 
 // --- Types ---
-type FeedbackStatus = 'idle' | 'processing' | 'locating' | 'success_in' | 'success_out' | 'error_radius' | 'error_time' | 'error_already_in' | 'error_already_out' | 'error_generic' | 'error_location' | 'info_holiday' | 'info_checked_out' | 'info_no_camera' | 'info_system_disabled';
+type FeedbackStatus = 'idle' | 'processing' | 'locating' | 'success_in' | 'success_out' | 'error_radius' | 'error_time' | 'error_already_in' | 'error_already_out' | 'error_generic' | 'error_location' | 'info_holiday' | 'info_checked_out' | 'info_no_camera' | 'info_system_disabled' | 'info_dinas_pagi_block' | 'info_dinas_siang_block';
 
 // --- Main Component ---
 export default function AbsenPage() {
@@ -62,8 +62,28 @@ export default function AbsenPage() {
   const { data: todaysAttendance, isLoading: isAttendanceLoading } = useCollection(user, todaysAttendanceQuery);
   const todaysRecord = useMemo(() => todaysAttendance?.[0], [todaysAttendance]);
 
+  // NEW: Fetch approved leave requests for the user
+  const approvedLeavesQuery = useMemoFirebase(() => {
+    if (!user || !firestore) return null;
+    return query(collection(firestore, 'users', user.uid, 'leaveRequests'), where('status', '==', 'approved'));
+  }, [user, firestore]);
+  const { data: approvedLeaves, isLoading: isLeavesLoading } = useCollection(user, approvedLeavesQuery);
+
+  // NEW: Check if there's a relevant leave for today
+  const leaveTypeForToday = useMemo(() => {
+    if (!approvedLeaves) return null;
+    const today = new Date();
+    const todaysLeave = approvedLeaves.find(leave => 
+        leave.startDate && leave.endDate && isWithinInterval(today, {
+            start: startOfDay(leave.startDate.toDate()),
+            end: endOfDay(leave.endDate.toDate())
+        })
+    );
+    return todaysLeave?.type || null;
+  }, [approvedLeaves]);
+
   // --- Derived State ---
-  const isDataLoading = isUserLoading || isUserDataLoading || isConfigLoading || isAttendanceLoading || isMonthlyConfigLoading;
+  const isDataLoading = isUserLoading || isUserDataLoading || isConfigLoading || isAttendanceLoading || isMonthlyConfigLoading || isLeavesLoading;
   const isCameraInitializing = hasCameraPermission === null;
   
   const isSystemDisabled = useMemo(() => schoolConfig?.isAttendanceActive === false, [schoolConfig]);
@@ -82,11 +102,12 @@ export default function AbsenPage() {
       if (isSystemDisabled) return 'info_system_disabled';
       if (hasCompletedAttendance) return 'info_checked_out';
       if (isHoliday) return 'info_holiday';
+      if (leaveTypeForToday === 'Dinas Full (1 Hari)' || leaveTypeForToday === 'Izin (pribadi)' || leaveTypeForToday === 'Sakit') return 'info_holiday'; // Treat as a form of holiday for scanner UI
       if (hasCameraPermission === false) return 'info_no_camera';
       return 'idle';
-  }, [status, isDataLoading, isSystemDisabled, hasCompletedAttendance, isHoliday, hasCameraPermission]);
+  }, [status, isDataLoading, isSystemDisabled, hasCompletedAttendance, isHoliday, hasCameraPermission, leaveTypeForToday]);
 
-  const showScanner = !isDataLoading && hasCameraPermission && !isSystemDisabled && !isHoliday && !hasCompletedAttendance;
+  const showScanner = !isDataLoading && hasCameraPermission && !isSystemDisabled && !isHoliday && !hasCompletedAttendance && !['Dinas Full (1 Hari)', 'Izin (pribadi)', 'Sakit'].includes(leaveTypeForToday || '');
   const showLoader = isDataLoading || isCameraInitializing || (showScanner && !isScannerReady);
 
   const handleAttendance = useCallback(async () => {
@@ -133,6 +154,14 @@ export default function AbsenPage() {
         } else {
             isCheckInTime = true;
         }
+    }
+
+    // NEW: Dinas leave check
+    if (isCheckInTime && (leaveTypeForToday === 'Dinas Pagi' || leaveTypeForToday === 'Dinas Full (1 Hari)')) {
+        return setStatus('info_dinas_pagi_block');
+    }
+    if (isCheckOutTime && (leaveTypeForToday === 'Dinas Siang' || leaveTypeForToday === 'Dinas Full (1 Hari)')) {
+        return setStatus('info_dinas_siang_block');
     }
 
     try {
@@ -212,7 +241,7 @@ export default function AbsenPage() {
         console.error("Error during attendance handling:", error);
         setStatus('error_generic');
     }
-  }, [user, firestore, schoolConfig, todaysRecord, toast, userData]);
+  }, [user, firestore, schoolConfig, todaysRecord, toast, userData, leaveTypeForToday]);
   
   const statusRef = useRef(status); statusRef.current = status;
   const handleAttendanceRef = useRef(handleAttendance); handleAttendanceRef.current = handleAttendance;
@@ -328,6 +357,8 @@ const StatusFeedbackOverlay = ({ status, locationError, onClose, userData }: { s
             case 'info_holiday': return { icon: <CalendarOff className="h-16 w-16 text-blue-500" />, title: 'Hari Libur', desc: 'Absensi tidak aktif pada hari libur rutin atau yang telah ditentukan.', cardClass: 'bg-blue-50 dark:bg-blue-950/50 border-blue-800' };
             case 'info_checked_out': return { icon: <CheckCircle className="h-16 w-16 text-green-500" />, title: 'Absensi Selesai', desc: 'Anda telah menyelesaikan absensi untuk hari ini.', cardClass: 'bg-green-50 dark:bg-green-950/50 border-green-800' };
             case 'info_no_camera': return { icon: <CameraOff className="h-16 w-16 text-destructive" />, title: 'Kamera Tidak Tersedia', desc: 'Izinkan akses kamera di pengaturan browser, lalu segarkan halaman ini.', cardClass: 'bg-destructive/10 border-destructive' };
+            case 'info_dinas_pagi_block': return { icon: <Info className="h-16 w-16 text-blue-500" />, title: 'Info Dinas Pagi', desc: 'Absen masuk tidak diperlukan karena Anda tercatat sedang dinas pagi.', cardClass: 'bg-blue-50 dark:bg-blue-950/50 border-blue-800' };
+            case 'info_dinas_siang_block': return { icon: <Info className="h-16 w-16 text-blue-500" />, title: 'Info Dinas Siang', desc: 'Absen pulang tidak diperlukan karena Anda tercatat sedang dinas siang.', cardClass: 'bg-blue-50 dark:bg-blue-950/50 border-blue-800' };
             default: return { icon: <AlertTriangle className="h-16 w-16 text-destructive" />, title: 'Gagal: Terjadi Kesalahan', desc: 'Silakan coba lagi beberapa saat.', cardClass: 'bg-destructive/10 border-destructive' };
         }
     }, [status, locationError]);
