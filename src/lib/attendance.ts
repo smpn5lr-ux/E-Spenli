@@ -213,9 +213,12 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
                 else if (record.keterangan === labels[LABEL_KEYS.NO_CHECK_IN]) points = weights.no_check_in;
                 else points = weights.present;
             } else if (record.status === 'Izin') {
-                if (record.keterangan.toLowerCase().includes('dinas')) points = weights.official_duty;
-                else if (record.keterangan.toLowerCase().includes('sakit')) points = weights.sick ?? weights.permission;
-                else points = weights.permission;
+                if (record.keterangan.toLowerCase().includes('dinas')) {
+                    points = weights.official_duty;
+                } else {
+                    // This now correctly covers both 'Sakit' and regular 'Izin'
+                    points = weights.permission;
+                }
             }
             totalScore += points;
         }
