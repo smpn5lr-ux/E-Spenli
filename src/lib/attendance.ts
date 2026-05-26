@@ -51,10 +51,10 @@ interface RawLeaveData {
 
 export interface MonthlyReportData {
     id: string; date: string; status: CoreStatus; keterangan: string;
-    checkInTime: string | null; checkOutTime: string | null; isCancellable?: boolean;
+    checkInTime: string | null; checkOutTime: string | null; 
+    leaveType?: string; // Add this to carry the original leave type
+    isCancellable?: boolean;
 }
-
-// The faulty calculateAttendancePercentage function has been removed.
 
 export async function fetchUserMonthlyReportData(
     firestore: Firestore,
@@ -111,7 +111,14 @@ export async function fetchUserMonthlyReportData(
             let keteranganLabel = labels[LABEL_KEYS.PERMISSION];
             if (leaveType === 'sakit') keteranganLabel = labels[LABEL_KEYS.SICK];
             else if (leaveType.includes('dinas')) keteranganLabel = labels[LABEL_KEYS.OFFICIAL_DUTY];
-            recordForDay = { id: leaveRecord.id, date: day, status: 'Izin', keterangan: leaveRecord.reason || keteranganLabel, isCancellable: isAfter(leaveRecord.startDate.toDate(), today) };
+            recordForDay = { 
+                id: leaveRecord.id, 
+                date: day, 
+                status: 'Izin', 
+                keterangan: leaveRecord.reason || keteranganLabel, 
+                leaveType: leaveType, // <-- Pass the original type
+                isCancellable: isAfter(leaveRecord.startDate.toDate(), today) 
+            };
         } else if (attendanceRecord?.adminEdited) {
             const desc = (attendanceRecord.description || '').toLowerCase();
             const isIzin = ['izin', 'sakit', 'dinas'].some(k => desc.includes(k));
@@ -133,7 +140,7 @@ export async function fetchUserMonthlyReportData(
     }
 
     report.sort((a, b) => b.date.getTime() - a.date.getTime());
-    return report.map(item => ({ ...item, date: item.date.toISOString(), checkInTime: item.checkInTime?.toDate().toISOString() || null, checkOutTime: item.checkOutTime?.toDate().toISOString() || null, isCancellable: item.isCancellable || false }));
+    return report.map(item => ({ ...item, date: item.date.toISOString(), checkInTime: item.checkInTime?.toDate().toISOString() || null, checkOutTime: item.checkOutTime?.toDate().toISOString() || null, isCancellable: item.isCancellable || false, leaveType: item.leaveType || undefined }));
 }
 
 export async function getDailyStaffAttendanceStats(firestore: Firestore) {
@@ -213,10 +220,10 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
                 else if (record.keterangan === labels[LABEL_KEYS.NO_CHECK_IN]) points = weights.no_check_in;
                 else points = weights.present;
             } else if (record.status === 'Izin') {
-                if (record.keterangan.toLowerCase().includes('dinas')) {
+                // Use the new reliable field `leaveType` instead of fragile `keterangan`
+                if (record.leaveType?.includes('dinas')) {
                     points = weights.official_duty;
-                } else {
-                    // This now correctly covers both 'Sakit' and regular 'Izin'
+                } else { // Covers 'sakit' and regular 'izin'
                     points = weights.permission;
                 }
             }
@@ -230,12 +237,19 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
     // 5. Count totals for the report table (Hadir, Izin, Sakit, Alpa)
     let totalHadir = 0, totalIzin = 0, totalSakit = 0, totalAlpa = 0;
     dailyStatuses.forEach(report => {
-        if (report.status === 'Hadir') totalHadir++;
-        else if (report.status === 'Izin') {
-            if (report.keterangan.toLowerCase().includes('sakit')) totalSakit++;
-            else totalIzin++;
+        if (report.status === 'Hadir') {
+            totalHadir++;
+        } else if (report.status === 'Izin') {
+            // Use the new reliable field `leaveType` for counting
+            if (report.leaveType === 'sakit') {
+                totalSakit++;
+            } else { // This groups 'izin' and 'dinas' into the 'Izin' column for the UI
+                totalIzin++;
+            }
         }
-        else if (report.status === 'Alpa') totalAlpa++;
+        else if (report.status === 'Alpa') {
+            totalAlpa++;
+        }
     });
 
     return {
