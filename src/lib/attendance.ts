@@ -182,7 +182,7 @@ export async function getDailyStaffAttendanceStats(firestore: Firestore) {
 
     const [attendanceSnap, leaveSnap, lateSubmissionSnap] = await Promise.all([getDocs(attendanceQuery), getDocs(leaveQuery), getDocs(lateSubmissionQuery)]);
 
-    const presentUserIds = new Set(attendanceSnap.docs.map(d => d.ref.parent.parent?.id).filter(id => staffIds.includes(id)));
+    const presentUserIds = new Set(attendanceSnap.docs.map(d => d.ref.parent.parent?.id).filter(id => typeof id === 'string' && staffIds.includes(id)));
     let izinCount = 0, sakitCount = 0, pendingLeaveCount = 0;
     const onLeaveUserIds = new Set<string>();
 

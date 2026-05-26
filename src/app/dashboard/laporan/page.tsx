@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useFirestore, useUser } from '@/firebase';
 import { collection, query, where, getDocs, doc, onSnapshot } from 'firebase/firestore';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Loader2, Printer } from 'lucide-react';
-import { useSettings } from '@/contexts/SettingsContext'; // Import the centralized settings hook
+import { useSettings } from '@/contexts/SettingsContext';
 
 interface AttendanceRecord {
   id: string;
@@ -52,7 +52,7 @@ export default function LaporanPage() {
   const [reportData, setReportData] = useState<Map<string, ReportData[]>>(new Map());
   const [isReportLoading, setIsReportLoading] = useState(false);
   const [isUsersLoading, setIsUsersLoading] = useState(true);
-  const printRef = useState<HTMLDivElement>(null)[0];
+  const printRef = useRef<HTMLDivElement>(null);
 
   const { schoolConfig, monthlyConfigs, subscribeToMonth, isMonthlyConfigLoading } = useSettings();
 
@@ -89,7 +89,7 @@ export default function LaporanPage() {
       const allDays = eachDayOfInterval({ start: startDate, end: endDate });
 
       const holidays = currentMonthlyConfig.holidays || [];
-      const offDays = schoolConfig.offDays || [0, 6]; // Default to Sunday (0) and Saturday (6)
+      const offDays = schoolConfig.offDays || [0, 6];
 
       const newReportData = new Map<string, ReportData[]>();
 
@@ -104,7 +104,6 @@ export default function LaporanPage() {
         for (const day of allDays) {
           const dayString = format(day, 'yyyy-MM-dd');
 
-          // FIX: Skip processing for holidays and off-days
           if (holidays.includes(dayString) || offDays.includes(day.getDay())) {
             continue;
           }
@@ -116,7 +115,7 @@ export default function LaporanPage() {
             checkIn: record?.checkInTime ? format(record.checkInTime.toDate(), 'HH:mm:ss') : '-',
             checkOut: record?.checkOutTime ? format(record.checkOutTime.toDate(), 'HH:mm:ss') : '-',
             status: record?.status ? statusLabels[record.status] || record.status : '-',
-            notes: '-', // Placeholder for notes
+            notes: '-',
           });
         }
         newReportData.set(user.uid, userRecords);
@@ -126,15 +125,15 @@ export default function LaporanPage() {
     };
 
     generateReport();
-  }, [users, selectedMonth, firestore, currentMonthlyConfig, schoolConfig]); // Added dependencies
+  }, [users, selectedMonth, firestore, currentMonthlyConfig, schoolConfig]);
 
-  const handlePrint = useReactToPrint({ content: () => printRef });
+  // @ts-ignore
+  const handlePrint = useReactToPrint({ content: () => printRef.current });
 
   const attendanceSummary = useMemo(() => {
     const summary = new Map<string, { present: number; total: number }>();
     if (!currentMonthlyConfig || reportData.size === 0 || !schoolConfig) return summary;
 
-    // Recalculate effective work days based on actual processed days in the report
     const firstUser = users[0];
     const effectiveWorkDays = firstUser ? (reportData.get(firstUser.uid)?.length ?? 0) : 0;
 
