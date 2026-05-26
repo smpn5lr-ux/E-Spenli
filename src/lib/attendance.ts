@@ -4,17 +4,13 @@ import { doc, getDoc, collection, getDocs, query, where, collectionGroup, Docume
 import { eachDayOfInterval, isWithinInterval, startOfMonth, endOfMonth, startOfDay, format, isAfter, endOfDay, parseISO } from 'date-fns';
 import type { Firestore } from 'firebase/firestore';
 
-// --- STATUS LOGIC & LABELS REFINED ---
-
 export type CoreStatus = 'Hadir' | 'Izin' | 'Alpa';
 
-// --- FINAL KEY CORRECTION ---
-// Based on user feedback, the key for full attendance is likely simpler.
 const LABEL_KEYS = {
-  PRESENT: 'present', // Changed from 'present_full' to 'present'
+  PRESENT: 'present',
   LATE: 'late',
   NO_CHECK_OUT: 'no_check_out',
-  NO_CHECK_IN: 'no_check_in', // Added for completeness
+  NO_CHECK_IN: 'no_check_in',
   SICK: 'sick',
   PERMISSION: 'permission',
   OFFICIAL_DUTY: 'official_duty',
@@ -23,7 +19,6 @@ const LABEL_KEYS = {
   ADMIN_CORRECTION: 'admin_correction',
 };
 
-// Default labels, used as a fallback if not configured by the admin.
 const DEFAULT_LABELS: { [key: string]: string } = {
   [LABEL_KEYS.PRESENT]: 'Kehadiran Penuh',
   [LABEL_KEYS.LATE]: 'Terlambat',
@@ -37,39 +32,58 @@ const DEFAULT_LABELS: { [key: string]: string } = {
   [LABEL_KEYS.ADMIN_CORRECTION]: 'Perbaikan Admin',
 };
 
-// --- INTERFACES ---
+export const DEFAULT_WEIGHTS: { [key: string]: number } = {
+  present: 1.0, late: 0.75, no_check_out: 0.5, no_check_in: 0.5, 
+  sick: 0.75, permission: 0.5, official_duty: 1.0, absent: 0.0,
+};
 
 interface RawAttendanceData {
-    id: string;
-    date: string; 
-    description: string;
-    checkInTime?: Timestamp;
-    checkOutTime?: Timestamp;
-    isLate?: boolean;
-    adminEdited?: boolean;
-    updatedAt?: Timestamp;
+    id: string; date: string; description: string;
+    checkInTime?: Timestamp; checkOutTime?: Timestamp;
+    isLate?: boolean; adminEdited?: boolean; updatedAt?: Timestamp;
 }
 
 interface RawLeaveData {
-    id: string;
-    startDate: Timestamp;
-    endDate: Timestamp;
+    id: string; startDate: Timestamp; endDate: Timestamp;
     status: 'approved' | 'pending' | 'rejected';
-    type: string; // e.g., Sakit, Izin, Dinas
-    reason: string;
+    type: string; reason: string;
 }
 
 export interface MonthlyReportData {
-    id: string;
-    date: string;
-    status: CoreStatus;
-    keterangan: string;
-    checkInTime: string | null;
-    checkOutTime: string | null;
-    isCancellable?: boolean;
+    id: string; date: string; status: CoreStatus; keterangan: string;
+    checkInTime: string | null; checkOutTime: string | null; isCancellable?: boolean;
 }
 
-// *** FINAL REFACTOR #4: FIX ADMIN EDITED STATUS INFERENCE ***
+export function calculateAttendancePercentage(
+  records: MonthlyReportData[],
+  weights: { [key: string]: number } = DEFAULT_WEIGHTS
+) {
+  let totalScore = 0;
+  let nonAlpaDays = 0;
+
+  records.forEach((record) => {
+    if (record.status !== 'Alpa') {
+      nonAlpaDays++;
+      let points = 0;
+      if (record.status === 'Hadir') {
+        if (record.keterangan === DEFAULT_LABELS[LABEL_KEYS.LATE]) points = weights.late;
+        else if (record.keterangan === DEFAULT_LABELS[LABEL_KEYS.NO_CHECK_OUT]) points = weights.no_check_out;
+        else if (record.keterangan === DEFAULT_LABELS[LABEL_KEYS.NO_CHECK_IN]) points = weights.no_check_in;
+        else points = weights.present;
+      } else if (record.status === 'Izin') {
+        if (record.keterangan.toLowerCase().includes('dinas')) points = weights.official_duty;
+        else if (record.keterangan.toLowerCase().includes('sakit')) points = weights.sick ?? weights.permission;
+        else points = weights.permission;
+      }
+      totalScore += points;
+    }
+  });
+
+  if (nonAlpaDays === 0) return { score: 0, percentage: 0 };
+  const percentage = (totalScore / nonAlpaDays) * 100;
+  return { score: totalScore, percentage: Math.min(100, Math.max(0, percentage)) };
+}
+
 export async function fetchUserMonthlyReportData(
     firestore: Firestore,
     userId: string,
@@ -80,21 +94,22 @@ export async function fetchUserMonthlyReportData(
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
     const today = new Date();
-
     const labels = { ...DEFAULT_LABELS, ...schoolConfig?.reportLabels };
 
     let effectiveMonthlyConfig = monthlyConfig;
-    if (!effectiveMonthlyConfig) {
+    if (typeof effectiveMonthlyConfig === 'undefined') {
         const monthlyConfigSnap = await getDoc(doc(firestore, 'monthlyConfigs', format(monthStart, 'yyyy-MM')));
-        effectiveMonthlyConfig = monthlyConfigSnap.data() || {};
+        effectiveMonthlyConfig = monthlyConfigSnap.data(); // Will be undefined if not found, that's OK
     }
+
+    const offDays: number[] = schoolConfig?.offDays ?? [0, 6];
+    const holidays: string[] = Array.isArray(effectiveMonthlyConfig?.holidays) ? effectiveMonthlyConfig.holidays : [];
 
     const attendanceQuery = query(collection(firestore, 'users', userId, 'attendanceRecords'), where('date', '>=', format(monthStart, 'yyyy-MM-dd')), where('date', '<=', format(monthEnd, 'yyyy-MM-dd')));
     const leaveQuery = query(collection(firestore, 'users', userId, 'leaveRequests'));
-    
-    const [attendanceHistorySnap, leaveHistorySnap] = await Promise.all([ getDocs(attendanceQuery), getDocs(leaveQuery) ]);
+    const [attendanceHistorySnap, leaveHistorySnap] = await Promise.all([getDocs(attendanceQuery), getDocs(leaveQuery)]);
 
-    const attendanceMap = new Map<string, RawAttendanceData>(attendanceHistorySnap.docs.map(d => [d.data().date, { id: d.id, ...d.data() } as RawAttendanceData]));
+    const attendanceMap = new Map(attendanceHistorySnap.docs.map(d => [d.data().date, { id: d.id, ...d.data() } as RawAttendanceData]));
     const leaveMap = new Map<string, RawLeaveData>();
     leaveHistorySnap.docs.forEach(leaveDoc => {
         const leave = { id: leaveDoc.id, ...leaveDoc.data() } as RawLeaveData;
@@ -106,114 +121,52 @@ export async function fetchUserMonthlyReportData(
         });
     });
 
-    const offDays: number[] = Array.isArray(schoolConfig?.offDays) ? schoolConfig.offDays : [0, 6];
-    const holidays: string[] = Array.isArray(effectiveMonthlyConfig?.holidays) ? effectiveMonthlyConfig.holidays : [];
-
     const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
     const report: any[] = [];
 
     for (const day of allDaysInMonth) {
         const dayStr = format(day, 'yyyy-MM-dd');
-
         if (isAfter(day, endOfDay(today)) || offDays.includes(day.getDay()) || holidays.includes(dayStr)) {
             continue;
         }
 
-        let recordForDay: {id: string, date: Date, status: CoreStatus, keterangan: string, checkInTime?: Timestamp, checkOutTime?: Timestamp, isCancellable?: boolean};
         const attendanceRecord = attendanceMap.get(dayStr);
         const leaveRecord = leaveMap.get(dayStr);
+        let recordForDay;
 
-        // --- LOGIC REORDER & FIX ---
-        // 1. Prioritize approved leave requests.
-        if (leaveRecord && leaveRecord.status === 'approved') {
-            let keteranganLabel = labels[LABEL_KEYS.PERMISSION]; 
+        if (leaveRecord?.status === 'approved') {
             const leaveType = leaveRecord.type.toLowerCase();
-            if (leaveType === 'sakit') { keteranganLabel = labels[LABEL_KEYS.SICK]; }
-            else if (leaveType === 'dinas') { keteranganLabel = labels[LABEL_KEYS.OFFICIAL_DUTY]; }
-            
-            recordForDay = {
-                id: leaveRecord.id, date: day, status: 'Izin',
-                keterangan: leaveRecord.reason || keteranganLabel,
-                isCancellable: isAfter(leaveRecord.startDate.toDate(), today)
-            };
-        }
-        // 2. Handle admin-edited records, inferring status from description.
-        else if (attendanceRecord && attendanceRecord.adminEdited) {
-            const description = (attendanceRecord.description || '').toLowerCase();
-            // Infer status from admin's text. Default to 'Hadir'.
-            const isIzin = ['izin', 'sakit', 'dinas'].some(keyword => description.includes(keyword));
-            const status: CoreStatus = isIzin ? 'Izin' : 'Hadir';
-
-            recordForDay = {
-                id: attendanceRecord.id, 
-                date: day, 
-                status: status, 
-                keterangan: attendanceRecord.description || labels[LABEL_KEYS.ADMIN_CORRECTION],
-                // Only show times if status is 'Hadir'
-                checkInTime: status === 'Hadir' ? attendanceRecord.checkInTime : undefined,
-                checkOutTime: status === 'Hadir' ? attendanceRecord.checkOutTime : undefined,
-            };
-        } 
-        // 3. Handle standard attendance records.
-        else if (attendanceRecord) {
-            const hasCheckIn = !!attendanceRecord.checkInTime;
-            const hasCheckOut = !!attendanceRecord.checkOutTime;
-            let keterangan;
-
-            if (attendanceRecord.isLate) {
-                keterangan = labels[LABEL_KEYS.LATE];
-            } else if (hasCheckIn && !hasCheckOut) {
-                keterangan = labels[LABEL_KEYS.NO_CHECK_OUT];
-            } else if (!hasCheckIn && hasCheckOut) {
-                keterangan = labels[LABEL_KEYS.NO_CHECK_IN];
+            let keteranganLabel = labels[LABEL_KEYS.PERMISSION];
+            if (leaveType === 'sakit') keteranganLabel = labels[LABEL_KEYS.SICK];
+            else if (leaveType.includes('dinas')) keteranganLabel = labels[LABEL_KEYS.OFFICIAL_DUTY];
+            recordForDay = { id: leaveRecord.id, date: day, status: 'Izin', keterangan: leaveRecord.reason || keteranganLabel, isCancellable: isAfter(leaveRecord.startDate.toDate(), today) };
+        } else if (attendanceRecord?.adminEdited) {
+            const desc = (attendanceRecord.description || '').toLowerCase();
+            const isIzin = ['izin', 'sakit', 'dinas'].some(k => desc.includes(k));
+            recordForDay = { id: attendanceRecord.id, date: day, status: isIzin ? 'Izin' : 'Hadir', keterangan: attendanceRecord.description || labels[LABEL_KEYS.ADMIN_CORRECTION], checkInTime: isIzin ? undefined : attendanceRecord.checkInTime, checkOutTime: isIzin ? undefined : attendanceRecord.checkOutTime };
+        } else if (attendanceRecord) {
+            let keterangan = labels[LABEL_KEYS.PRESENT];
+            if (attendanceRecord.isLate) keterangan = labels[LABEL_KEYS.LATE];
+            else if (!!attendanceRecord.checkInTime && !attendanceRecord.checkOutTime) keterangan = labels[LABEL_KEYS.NO_CHECK_OUT];
+            else if (!attendanceRecord.checkInTime && !!attendanceRecord.checkOutTime) keterangan = labels[LABEL_KEYS.NO_CHECK_IN];
+            recordForDay = { id: attendanceRecord.id, date: day, status: 'Hadir', keterangan, checkInTime: attendanceRecord.checkInTime, checkOutTime: attendanceRecord.checkOutTime };
+        } else {
+            if (leaveRecord?.status === 'pending') {
+                recordForDay = { id: leaveRecord.id, date: day, status: 'Alpa', keterangan: `${labels[LABEL_KEYS.PENDING_APPROVAL]}: ${leaveRecord.type || 'Izin'}`, isCancellable: true };
             } else {
-                keterangan = labels[LABEL_KEYS.PRESENT];
+                recordForDay = { id: dayStr, date: day, status: 'Alpa', keterangan: labels[LABEL_KEYS.ABSENT] };
             }
-
-            recordForDay = {
-                id: attendanceRecord.id, date: day, status: 'Hadir',
-                keterangan: keterangan, checkInTime: attendanceRecord.checkInTime, checkOutTime: attendanceRecord.checkOutTime,
-            };
-        } 
-        // 4. Handle absences (Alpa).
-        else {
-             if (leaveRecord && leaveRecord.status === 'pending') {
-                 recordForDay = {
-                    id: leaveRecord.id, date: day, status: 'Alpa',
-                    keterangan: `${labels[LABEL_KEYS.PENDING_APPROVAL]}: ${leaveRecord.type || 'Izin'}`,
-                    isCancellable: true
-                 };
-             } else {
-                recordForDay = {
-                    id: dayStr, date: day, status: 'Alpa',
-                    keterangan: labels[LABEL_KEYS.ABSENT],
-                };
-             }
         }
-
-        if (recordForDay) {
-            report.push(recordForDay);
-        }
+        report.push(recordForDay);
     }
 
     report.sort((a, b) => b.date.getTime() - a.date.getTime());
-
-    return report.map((item): MonthlyReportData => ({
-        id: item.id,
-        date: item.date.toISOString(),
-        status: item.status,
-        keterangan: item.keterangan,
-        checkInTime: item.checkInTime?.toDate().toISOString() || null,
-        checkOutTime: item.checkOutTime?.toDate().toISOString() || null,
-        isCancellable: item.isCancellable || false,
-    }));
+    return report.map(item => ({ ...item, date: item.date.toISOString(), checkInTime: item.checkInTime?.toDate().toISOString() || null, checkOutTime: item.checkOutTime?.toDate().toISOString() || null, isCancellable: item.isCancellable || false }));
 }
-
 
 export async function getDailyStaffAttendanceStats(firestore: Firestore) {
     const today = new Date();
     const todayStr = format(today, 'yyyy-MM-dd');
-
     const usersQuery = query(collection(firestore, 'users'), where('role', 'in', ['guru', 'pegawai', 'kepala_sekolah']));
     const usersSnap = await getDocs(usersQuery);
     const allStaff = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -227,72 +180,29 @@ export async function getDailyStaffAttendanceStats(firestore: Firestore) {
     const leaveQuery = query(collectionGroup(firestore, 'leaveRequests'));
     const lateSubmissionQuery = query(collectionGroup(firestore, 'lateSubmissions'), where('date', '==', todayStr));
 
-    const [attendanceSnap, leaveSnap, lateSubmissionSnap] = await Promise.all([
-        getDocs(attendanceQuery),
-        getDocs(leaveQuery),
-        getDocs(lateSubmissionQuery)
-    ]);
+    const [attendanceSnap, leaveSnap, lateSubmissionSnap] = await Promise.all([getDocs(attendanceQuery), getDocs(leaveQuery), getDocs(lateSubmissionQuery)]);
 
-    const presentUserIds = new Set<string>();
-    attendanceSnap.forEach(doc => {
-        const userId = doc.ref.parent.parent?.id;
-        if (userId && staffIds.includes(userId)) {
-            presentUserIds.add(userId);
-        }
-    });
-
+    const presentUserIds = new Set(attendanceSnap.docs.map(d => d.ref.parent.parent?.id).filter(id => staffIds.includes(id)));
     let izinCount = 0, sakitCount = 0, pendingLeaveCount = 0;
     const onLeaveUserIds = new Set<string>();
+
     leaveSnap.forEach(doc => {
         const leave = doc.data() as RawLeaveData;
         const userId = doc.ref.parent.parent?.id;
-
-        if (userId && staffIds.includes(userId)) {
-            const isTodayInLeaveInterval = isWithinInterval(today, {
-                start: startOfDay(leave.startDate.toDate()),
-                end: endOfDay(leave.endDate.toDate())
-            });
-
-            if (isTodayInLeaveInterval) {
-                 if (leave.status === 'approved') {
-                    onLeaveUserIds.add(userId);
-                    if (leave.type.toLowerCase() === 'sakit') {
-                        sakitCount++;
-                    } else {
-                        izinCount++;
-                    }
-                } else if (leave.status === 'pending') {
-                    pendingLeaveCount++;
-                }
+        if (userId && staffIds.includes(userId) && isWithinInterval(today, { start: startOfDay(leave.startDate.toDate()), end: endOfDay(leave.endDate.toDate()) })) {
+            if (leave.status === 'approved') {
+                onLeaveUserIds.add(userId);
+                if (leave.type.toLowerCase() === 'sakit') sakitCount++; else izinCount++;
+            } else if (leave.status === 'pending') {
+                pendingLeaveCount++;
             }
         }
     });
 
-    let pendingLateCount = 0;
-    let totalLateCount = 0;
-    lateSubmissionSnap.forEach(doc => {
-        const submission = doc.data();
-        const userId = doc.ref.parent.parent?.id;
-        if (userId && staffIds.includes(userId)) {
-            totalLateCount++;
-            if (submission.status === 'pending') {
-                pendingLateCount++;
-            }
-        }
-    });
-
-    const hadirCount = presentUserIds.size;
     const alpaCount = allStaff.filter(user => !presentUserIds.has(user.id) && !onLeaveUserIds.has(user.id)).length;
-
     return {
-        totalStaff: allStaff.length,
-        hadir: hadirCount,
-        izin: izinCount,
-        sakit: sakitCount,
-        alpa: alpaCount,
-        pendingLeave: pendingLeaveCount,
-        pendingLate: pendingLateCount,
-        totalLate: totalLateCount
+        totalStaff: allStaff.length, hadir: presentUserIds.size, izin: izinCount, sakit: sakitCount, alpa: alpaCount,
+        pendingLeave: pendingLeaveCount, totalLate: lateSubmissionSnap.size, pendingLate: lateSubmissionSnap.docs.filter(d => d.data().status === 'pending').length,
     };
 }
 
@@ -303,20 +213,22 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
         getDoc(doc(firestore, 'monthlyConfigs', format(monthStart, 'yyyy-MM'))),
     ]);
     const schoolConfig = schoolConfigSnap.data() || {};
-    const monthlyConfig = monthlyConfigSnap.data() || {};
-    const offDays: number[] = schoolConfig?.offDays ?? [0, 6];
-    const holidays: string[] = Array.isArray(monthlyConfig?.holidays) ? monthlyConfig.holidays : [];
-    const allDaysInMonth = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) });
-    const effectiveWorkingDays = allDaysInMonth.filter(day => !offDays.includes(day.getDay()) && !holidays.includes(format(day, 'yyyy-MM-dd')) && !isAfter(day, new Date()));
-    const totalWorkingDays = effectiveWorkingDays.length;
+    const monthlyConfig = monthlyConfigSnap.data(); // Will be undefined if doc doesn't exist.
+
     const dailyStatuses = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfig, monthlyConfig);
-    if (totalWorkingDays === 0) return { totalHadir: 0, totalIzin: 0, totalSakit: 0, totalAlpa: 0, percentage: 100.0, dailyStatuses: [] };
-    let totalHadir = 0, totalIzin = 0, totalAlpa = 0;
+    
+    const weights = { ...DEFAULT_WEIGHTS, ...schoolConfig.attendanceWeights };
+    const { percentage } = calculateAttendancePercentage(dailyStatuses, weights);
+
+    let totalHadir = 0, totalIzin = 0, totalSakit = 0, totalAlpa = 0;
     dailyStatuses.forEach(report => {
         if (report.status === 'Hadir') totalHadir++;
-        else if (report.status === 'Izin') totalIzin++;
+        else if (report.status === 'Izin') {
+            if (report.keterangan.toLowerCase().includes('sakit')) totalSakit++;
+            else totalIzin++;
+        }
         else if (report.status === 'Alpa') totalAlpa++;
     });
-    const percentage = totalWorkingDays > 0 ? ((totalHadir + totalIzin) / totalWorkingDays) * 100 : 100;
-    return { totalHadir, totalIzin, totalSakit: 0, totalAlpa, percentage: Math.min(percentage, 100), dailyStatuses };
+
+    return { totalHadir, totalIzin, totalSakit, totalAlpa, percentage, dailyStatuses };
 }

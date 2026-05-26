@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
-import { doc, getDoc, writeBatch, Timestamp, collection } from 'firebase/firestore';
+import { doc, writeBatch, Timestamp, collection } from 'firebase/firestore';
 import { fetchUserMonthlyReportData, MonthlyReportData } from '@/lib/attendance';
 import { 
     Dialog, 
@@ -40,6 +40,8 @@ interface EditAttendanceModalProps {
     isOpen: boolean;
     onClose: () => void;
     currentUser: { uid: string; [key: string]: any } | null;
+    schoolConfig: any; // DEFINITIVE FIX: Receive schoolConfig as a prop
+    monthlyConfig: any; // DEFINITIVE FIX: Receive monthlyConfig as a prop
 }
 
 // --- CONSTANTS ---
@@ -63,7 +65,7 @@ const getRandomTimeInRange = (baseDate: Date, startTimeStr: string, endTimeStr: 
     return randomTime;
 };
 
-export default function EditAttendanceModal({ user, month, isOpen, onClose, currentUser }: EditAttendanceModalProps) {
+export default function EditAttendanceModal({ user, month, isOpen, onClose, currentUser, schoolConfig, monthlyConfig }: EditAttendanceModalProps) {
     const firestore = useFirestore();
     const [problematicDays, setProblematicDays] = useState<ProblematicDay[]>([]);
     const [selectedActions, setSelectedActions] = useState<{ [key: string]: string | undefined }>({});
@@ -71,19 +73,21 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [schoolConfig, setSchoolConfig] = useState<any>(null);
 
     useEffect(() => {
-        if (!isOpen || !firestore || !user) return;
+        // DEFINITIVE FIX: Guard against missing props, not just isOpen.
+        if (!isOpen || !firestore || !user || !schoolConfig) {
+            setIsLoading(false);
+            return;
+        }
+
         const getProblematicDays = async () => {
             setIsLoading(true);
             setError(null);
             try {
-                const schoolConfigRef = doc(firestore, 'schoolConfig', 'default');
-                const schoolConfigSnap = await getDoc(schoolConfigRef);
-                const config = schoolConfigSnap.data() || {};
-                setSchoolConfig(config);
-                const reportData: MonthlyReportData[] = await fetchUserMonthlyReportData(firestore, user.uid, month, config, {});
+                // DEFINITIVE FIX: Use the schoolConfig and monthlyConfig from props.
+                // No more manual fetching. monthlyConfig can be undefined, which is correct.
+                const reportData: MonthlyReportData[] = await fetchUserMonthlyReportData(firestore, user.uid, month, schoolConfig, monthlyConfig);
                 
                 const problems: ProblematicDay[] = reportData
                     .filter(d => 
@@ -115,7 +119,8 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
             }
         };
         getProblematicDays();
-    }, [isOpen, firestore, user, month]);
+    // DEFINITIVE FIX: Add schoolConfig and monthlyConfig to the dependency array.
+    }, [isOpen, firestore, user, month, schoolConfig, monthlyConfig]);
 
     const handleActionChange = (dayId: string, action: string) => {
         setSelectedActions(prev => ({ ...prev, [dayId]: action }));

@@ -54,23 +54,15 @@ export default function LaporanPage() {
   const [isUsersLoading, setIsUsersLoading] = useState(true);
   const printRef = useState<HTMLDivElement>(null)[0];
 
-  // REFACTORED: Use the centralized SettingsContext to get configurations
-  const {
-    schoolConfig, 
-    monthlyConfigs, 
-    subscribeToMonth, 
-    isMonthlyConfigLoading
-  } = useSettings();
+  const { schoolConfig, monthlyConfigs, subscribeToMonth, isMonthlyConfigLoading } = useSettings();
 
   const monthId = selectedMonth;
   const currentMonthlyConfig = monthlyConfigs[monthId];
 
-  // Effect to subscribe to the selected month's configuration
   useEffect(() => {
     subscribeToMonth(monthId);
   }, [monthId, subscribeToMonth]);
 
-  // Effect to fetch all users (teachers and staff)
   useEffect(() => {
     if (!firestore) return;
     const fetchUsers = async () => {
@@ -85,9 +77,8 @@ export default function LaporanPage() {
     fetchUsers();
   }, [firestore]);
 
-  // Main effect to generate the report when users or month changes
   useEffect(() => {
-    if (users.length === 0 || !firestore) return;
+    if (users.length === 0 || !firestore || !currentMonthlyConfig || !schoolConfig) return;
 
     const generateReport = async () => {
       setIsReportLoading(true);
@@ -97,19 +88,27 @@ export default function LaporanPage() {
       const endDate = endOfMonth(startDate);
       const allDays = eachDayOfInterval({ start: startDate, end: endDate });
 
+      const holidays = currentMonthlyConfig.holidays || [];
+      const offDays = schoolConfig.offDays || [0, 6]; // Default to Sunday (0) and Saturday (6)
+
       const newReportData = new Map<string, ReportData[]>();
 
       for (const user of users) {
         const userRecords: ReportData[] = [];
         const attendanceRef = collection(firestore, `users/${user.uid}/attendance`);
         
-        // This part can be further optimized, but for now we fetch all records for the month.
         const q = query(attendanceRef, where('date', '>=', format(startDate, 'yyyy-MM-dd')), where('date', '<=', format(endDate, 'yyyy-MM-dd')));
         const attendanceSnapshot = await getDocs(q);
         const recordsMap = new Map(attendanceSnapshot.docs.map(doc => [doc.id, doc.data() as AttendanceRecord]));
 
         for (const day of allDays) {
           const dayString = format(day, 'yyyy-MM-dd');
+
+          // FIX: Skip processing for holidays and off-days
+          if (holidays.includes(dayString) || offDays.includes(day.getDay())) {
+            continue;
+          }
+
           const record = recordsMap.get(dayString);
 
           userRecords.push({
@@ -127,15 +126,17 @@ export default function LaporanPage() {
     };
 
     generateReport();
-  }, [users, selectedMonth, firestore]);
+  }, [users, selectedMonth, firestore, currentMonthlyConfig, schoolConfig]); // Added dependencies
 
   const handlePrint = useReactToPrint({ content: () => printRef });
 
   const attendanceSummary = useMemo(() => {
     const summary = new Map<string, { present: number; total: number }>();
-    if (!currentMonthlyConfig || reportData.size === 0) return summary;
+    if (!currentMonthlyConfig || reportData.size === 0 || !schoolConfig) return summary;
 
-    const effectiveWorkDays = currentMonthlyConfig.workDays ?? 0;
+    // Recalculate effective work days based on actual processed days in the report
+    const firstUser = users[0];
+    const effectiveWorkDays = firstUser ? (reportData.get(firstUser.uid)?.length ?? 0) : 0;
 
     users.forEach(user => {
       const userData = reportData.get(user.uid);
@@ -147,7 +148,7 @@ export default function LaporanPage() {
       summary.set(user.uid, { present: presentCount, total: effectiveWorkDays });
     });
     return summary;
-  }, [reportData, users, currentMonthlyConfig]);
+  }, [reportData, users, currentMonthlyConfig, schoolConfig]);
 
   const isLoading = isAuthLoading || isUsersLoading || isReportLoading || isMonthlyConfigLoading(monthId);
 

@@ -248,7 +248,7 @@ export default function PersetujuanIzinPage() {
                       <TableRow key={req.id}>
                         <TableCell className="font-medium">{req.userName}</TableCell>
                         <TableCell>
-                          <Badge variant={req.type === 'Sakit' ? 'destructive' : 'secondary'}>
+                          <Badge variant={req.type === 'Sakit' ? 'destructive' : req.type.includes('Dinas') ? 'default' : 'secondary'}>
                             {req.type}
                           </Badge>
                         </TableCell>
@@ -304,7 +304,7 @@ export default function PersetujuanIzinPage() {
                     <TableRow key={req.id}>
                       <TableCell className="font-medium">{req.userName}</TableCell>
                       <TableCell>
-                        <Badge variant={req.type === 'Sakit' ? 'destructive' : 'secondary'}>
+                        <Badge variant={req.type === 'Sakit' ? 'destructive' : req.type.includes('Dinas') ? 'default' : 'secondary'}>
                           {req.type}
                         </Badge>
                       </TableCell>

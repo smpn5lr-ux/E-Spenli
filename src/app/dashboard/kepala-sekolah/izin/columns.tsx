@@ -11,7 +11,7 @@ export type LeaveRequest = {
   path: string
   userName: string
   userRole: string
-  type: "Izin" | "Sakit"
+  type: "Izin" | "Sakit" | "Izin Pulang Cepat" | "Dinas Pagi" | "Dinas Siang" | "Dinas Full (1 Hari)"
   startDate: { toDate: () => Date }
   endDate: { toDate: () => Date }
   reason: string

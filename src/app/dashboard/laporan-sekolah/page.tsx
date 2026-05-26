@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { collection, getDocs, query, where, doc } from 'firebase/firestore';
-import { format, isValid, parseISO, startOfMonth, endOfMonth } from 'date-fns';
+import { format, isValid, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Download, AlertCircle, FileText, FileSpreadsheet, RefreshCw, Loader2, Edit, Eye } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -113,11 +113,17 @@ export default function SchoolReportPage() {
     const [editingUser, setEditingUser] = useState<ReportRowData | null>(null);
     const [refetchIndex, setRefetchIndex] = useState(0);
 
+    // --- DEFINITIVE FIX: Fetch ALL required configurations at the top level. ---
     const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
     const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc(user, schoolConfigRef);
 
+    const monthlyConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'monthlyConfigs', format(currentMonth, 'yyyy-MM')) : null, [firestore, currentMonth]);
+    const { data: monthlyConfigData, isLoading: isMonthlyConfigLoading } = useDoc(user, monthlyConfigRef);
+    // --- END FIX ---
+
     useEffect(() => {
-        if (isUserLoading || !user || !firestore || isConfigLoading || !schoolConfigData) return;
+        // --- DEFINITIVE FIX: Add guards for ALL loading states. ---
+        if (isUserLoading || !user || !firestore || isConfigLoading || isMonthlyConfigLoading) return;
         
         let isMounted = true;
         const loadData = async () => {
@@ -134,7 +140,8 @@ export default function SchoolReportPage() {
 
                 const reportPromises = usersSnapshot.docs.map(async (userDoc) => {
                     const userData = userDoc.data();
-                    const stats = await calculateAttendanceStats(firestore, userDoc.id, currentMonth);
+                    // --- DEFINITIVE FIX: Pass the fetched monthlyConfigData directly. ---
+                    const stats = await calculateAttendanceStats(firestore, userDoc.id, currentMonth, schoolConfigData, monthlyConfigData);
                     
                     return {
                         uid: userDoc.id,
@@ -179,7 +186,8 @@ export default function SchoolReportPage() {
         loadData();
         
         return () => { isMounted = false; };
-    }, [user, isUserLoading, firestore, currentMonth, refetchIndex, schoolConfigData, isConfigLoading]);
+    // --- DEFINITIVE FIX: Add all dependencies to the effect array. ---
+    }, [user, isUserLoading, firestore, currentMonth, refetchIndex, schoolConfigData, isConfigLoading, monthlyConfigData, isMonthlyConfigLoading]);
     
     const monthName = format(currentMonth, 'MMMM yyyy', { locale: id });
     const principal = useMemo(() => reportData.find(u => u.role === 'kepala_sekolah'), [reportData]);
@@ -279,13 +287,15 @@ export default function SchoolReportPage() {
     };
 
     const handleDownloadUserPdf = async (targetUser: ReportRowData) => {
+        // --- DEFINITIVE FIX: Check all required data before proceeding. ---
         if (!firestore || !schoolConfigData) return;
         const { jsPDF } = await import('jspdf');
         const autoTable = (await import('jspdf-autotable')).default;
         const doc = new jsPDF();
         
         try {
-            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, {});
+            // --- DEFINITIVE FIX: Pass the correct monthlyConfigData. ---
+            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, monthlyConfigData);
             
             let startY = addReportHeader(doc);
             const pageWidth = doc.internal.pageSize.getWidth();
@@ -325,9 +335,11 @@ export default function SchoolReportPage() {
     };
     
     const handleDownloadUserExcel = async (targetUser: ReportRowData) => {
+        // --- DEFINITIVE FIX: Check all required data before proceeding. ---
         if (!firestore || !schoolConfigData) return;
         try {
-            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, {});
+            // --- DEFINITIVE FIX: Pass the correct monthlyConfigData. ---
+            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, monthlyConfigData);
             const kopSurat = [['PEMERINTAH KABUPATEN MANGGARAI'], ['DINAS PENDIDIKAN PEMUDA DAN OLAHRAGA'], ['SMP NEGERI 5 LANGKE REMBONG'], ['Alamat: Mando, Kelurahan compang carep, Kecamatan Langke Rembong'], [], ['LAPORAN KEHADIRAN'], [`Periode: ${monthName}`], []];
             const userInfo = [['Nama', `: ${targetUser.name}`], ['NIP', `: ${targetUser.nip || '-'}`], ['Status Kepegawaian', `: ${targetUser.position || '-'}`], []];
             const tableHeaders = ['No', 'Tanggal', 'Jam Masuk', 'Jam Pulang', 'Status', 'Keterangan'];
@@ -351,9 +363,19 @@ export default function SchoolReportPage() {
     };
 
     const changeMonth = (amount: number) => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + amount, 1));
-    const handleEditClick = (userToEdit: ReportRowData) => { setEditingUser(userToEdit); setIsEditModalOpen(true); };
-    const handleCloseModal = () => { setIsEditModalOpen(false); setEditingUser(null); setRefetchIndex(prev => prev + 1); };
-    const isLoading = isReportLoading || isUserLoading || isConfigLoading;
+    
+    // --- DEFINITIVE FIX: Pass the correct monthlyConfigData to the modal. ---
+    const handleEditClick = (userToEdit: ReportRowData) => { 
+        setEditingUser(userToEdit); 
+        setIsEditModalOpen(true); 
+    };
+    const handleCloseModal = () => { 
+        setIsEditModalOpen(false); 
+        setEditingUser(null); 
+        setRefetchIndex(prev => prev + 1); // Trigger a data refresh
+    };
+    
+    const isLoading = isReportLoading || isUserLoading || isConfigLoading || isMonthlyConfigLoading;
 
     if (isUserLoading) return <PageWrapper><div className="p-6"><Skeleton className="h-40 w-full" /></div></PageWrapper>;
     if (!user) return null;
@@ -362,7 +384,16 @@ export default function SchoolReportPage() {
     return (
         <PageWrapper>
             {isEditModalOpen && editingUser && (
-                <EditAttendanceModal user={editingUser} month={currentMonth} isOpen={isEditModalOpen} onClose={handleCloseModal} currentUser={user} />
+                 // --- DEFINITIVE FIX: Pass monthlyConfigData to the modal ---
+                <EditAttendanceModal 
+                    user={editingUser} 
+                    month={currentMonth} 
+                    isOpen={isEditModalOpen} 
+                    onClose={handleCloseModal} 
+                    currentUser={user}
+                    schoolConfig={schoolConfigData} // Pass the loaded school config
+                    monthlyConfig={monthlyConfigData} // Pass the loaded monthly config
+                />
             )}
             
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
@@ -374,8 +405,8 @@ export default function SchoolReportPage() {
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button><Download className="mr-2 h-4 w-4" />Unduh Laporan</Button></DropdownMenuTrigger>
                         <DropdownMenuContent>
-                            <DropdownMenuItem onClick={handleDownloadExcel}><FileSpreadsheet className="mr-2 h-4 w-4"/>Unduh Excel</DropdownMenuItem>
-                            <DropdownMenuItem onClick={handleDownloadPdf}><FileText className="mr-2 h-4 w-4"/>Unduh PDF</DropdownMenuItem>
+                            <DropdownMenuItem onClick={handleDownloadExcel} disabled={isLoading}><FileSpreadsheet className="mr-2 h-4 w-4"/>Unduh Excel</DropdownMenuItem>
+                            <DropdownMenuItem onClick={handleDownloadPdf} disabled={isLoading}><FileText className="mr-2 h-4 w-4"/>Unduh PDF</DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )}
@@ -383,11 +414,11 @@ export default function SchoolReportPage() {
 
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" onClick={() => changeMonth(-1)} disabled={currentMonth.getFullYear() === 2026 && currentMonth.getMonth() === 0}>
+                     <Button variant="outline" size="icon" onClick={() => setCurrentMonth(prev => subMonths(prev, 1))} disabled={isLoading}>
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
                     <span className="w-36 text-center font-semibold">{monthName}</span>
-                    <Button variant="outline" size="icon" onClick={() => changeMonth(1)} disabled={currentMonth.getMonth() === new Date().getMonth() && currentMonth.getFullYear() === new Date().getFullYear()}>
+                    <Button variant="outline" size="icon" onClick={() => setCurrentMonth(prev => addMonths(prev, 1))} disabled={isSameMonth(currentMonth, new Date()) || isLoading}>
                         <ChevronRight className="h-4 w-4" />
                     </Button>
                     <Button variant="outline" size="icon" onClick={() => setRefetchIndex(prev => prev + 1)} disabled={isLoading} aria-label="Muat Ulang Data">
@@ -442,7 +473,7 @@ export default function SchoolReportPage() {
                                                 <>
                                                     <TableCell className="text-center">
                                                         <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><Download className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                                                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" disabled={isLoading}><Download className="h-4 w-4" /></Button></DropdownMenuTrigger>
                                                             <DropdownMenuContent>
                                                                 <DropdownMenuItem onClick={() => handleDownloadUserPdf(item)}><FileText className="mr-2 h-4 w-4"/>Unduh PDF</DropdownMenuItem>
                                                                 <DropdownMenuItem onClick={() => handleDownloadUserExcel(item)}><FileSpreadsheet className="mr-2 h-4 w-4"/>Unduh Excel</DropdownMenuItem>
@@ -451,7 +482,7 @@ export default function SchoolReportPage() {
                                                     </TableCell>
                                                     <TableCell className="text-center">
                                                         <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                                                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" disabled={isLoading}><Edit className="h-4 w-4" /></Button></DropdownMenuTrigger>
                                                             <DropdownMenuContent>
                                                                 <DropdownMenuItem onClick={() => handleEditClick(item)}><Edit className="mr-2 h-4 w-4"/>Edit Kehadiran</DropdownMenuItem>
                                                                 <DropdownMenuItem asChild><Link href={`/dashboard/laporan/${item.uid}`}><Eye className="mr-2 h-4 w-4" />Lihat Detail</Link></DropdownMenuItem>

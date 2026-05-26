@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, getDoc, writeBatch, serverTimestamp, Timestamp } from 'firebase/firestore';
@@ -69,7 +69,6 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
         const dateStr = format(recordDate, 'yyyy-MM-dd');
         const attendanceRef = doc(firestore, 'users', userId, 'attendanceRecords', dateStr);
 
-        // Final definitive fix: Read, Modify, then explicit Set.
         const docSnap = await getDoc(attendanceRef);
         const existingData = docSnap.data() || {};
 
@@ -81,21 +80,18 @@ function AdminCorrectionDialog({ record, userId, schoolConfig, onCorrectionCompl
           updatedAt: serverTimestamp(),
         };
 
-        // Generate check-in time if it doesn't exist at all.
         if (!finalData.checkInTime) {
             const checkInStart = schoolConfig?.checkInTime?.start || '06:00';
             const checkInEnd = schoolConfig?.checkInTime?.end || '07:30';
             finalData.checkInTime = Timestamp.fromDate(generateRandomTime(recordDate, checkInStart, checkInEnd));
         }
 
-        // Generate check-out time if it doesn't exist at all.
         if (!finalData.checkOutTime) {
             const checkOutStart = schoolConfig?.checkOutTime?.start || '14:00';
             const checkOutEnd = schoolConfig?.checkOutTime?.end || '17:00';
             finalData.checkOutTime = Timestamp.fromDate(generateRandomTime(recordDate, checkOutStart, checkOutEnd));
         }
 
-        // Overwrite the document with the complete, corrected data.
         batch.set(attendanceRef, finalData);
 
         if (record.isCancellable) {
@@ -169,11 +165,19 @@ export default function UserReportDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // --- DEFINITIVE FIX: Fetch all required configs explicitly ---
     const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
     const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc(currentUser, schoolConfigRef);
 
-    const fetchReport = async () => {
-        if (!firestore || !userId || !schoolConfigData || !currentUser) return;
+    const monthlyConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'monthlyConfigs', format(currentMonth, 'yyyy-MM')) : null, [firestore, currentMonth]);
+    const { data: monthlyConfigData, isLoading: isMonthlyConfigLoading } = useDoc(currentUser, monthlyConfigRef);
+    // --- END FIX ---
+
+    const fetchReport = useCallback(async () => {
+        // --- DEFINITIVE FIX: Add guard clauses for all dependencies ---
+        if (!firestore || !userId || !currentUser || !schoolConfigData || !monthlyConfigData) {
+            return; 
+        }
         
         setIsLoading(true);
         setError(null);
@@ -182,12 +186,15 @@ export default function UserReportDetailPage() {
                  throw new Error('Anda tidak memiliki izin untuk melihat laporan ini.');
             }
 
-            const userRef = doc(firestore, 'users', userId);
-            const userSnap = await getDoc(userRef);
-            if (!userSnap.exists()) throw new Error('Pengguna tidak ditemukan.');
-            setUserData(userSnap.data());
+            if (!userData) {
+              const userRef = doc(firestore, 'users', userId);
+              const userSnap = await getDoc(userRef);
+              if (!userSnap.exists()) throw new Error('Pengguna tidak ditemukan.');
+              setUserData(userSnap.data());
+            }
 
-            const reportData = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfigData);
+            // --- DEFINITIVE FIX: Pass all configs to the data fetching function ---
+            const reportData = await fetchUserMonthlyReportData(firestore, userId, currentMonth, schoolConfigData, monthlyConfigData);
             setMonthlyReportData(reportData);
 
         } catch (err: any) {
@@ -196,15 +203,16 @@ export default function UserReportDetailPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [firestore, userId, currentMonth, currentUser, schoolConfigData, monthlyConfigData, userData]);
 
     useEffect(() => {
         fetchReport();
-    }, [firestore, userId, currentMonth, schoolConfigData, currentUser]);
+    }, [fetchReport]);
 
     const handleDownloadPdf = async () => { /* PDF generation logic */ };
 
-    const pageIsLoading = isLoading || isUserLoading || isConfigLoading;
+    // --- DEFINITIVE FIX: Include all loading states ---
+    const pageIsLoading = isLoading || isUserLoading || isConfigLoading || isMonthlyConfigLoading;
     const isAdmin = currentUser?.role === 'admin';
 
     if (!isUserLoading && currentUser?.role !== 'admin' && currentUser?.role !== 'kepala_sekolah') {

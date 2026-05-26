@@ -18,7 +18,7 @@ import { Switch } from '@/components/ui/switch';
 import { Download, Loader2, RefreshCw, LocateFixed, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useDoc, useMemoFirebase, useUser, setDocumentNonBlocking } from '@/firebase';
-import { doc, writeBatch } from 'firebase/firestore';
+import { doc, writeBatch, onSnapshot, setDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, eachDayOfInterval, startOfMonth } from 'date-fns';
@@ -32,12 +32,24 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useSettings } from '@/contexts/SettingsContext';
+import { DEFAULT_WEIGHTS } from '@/lib/attendance';
 
 // --- Days of Week (Helper) ---
 const daysOfWeek = [
     { value: 0, label: 'Minggu' }, { value: 1, label: 'Senin' }, { value: 2, label: 'Selasa' }, 
     { value: 3, label: 'Rabu' }, { value: 4, label: 'Kamis' }, { value: 5, label: 'Jumat' }, { value: 6, label: 'Sabtu' },
 ];
+
+const statusKeyToLabelMap: { [key: string]: string } = {
+    present: 'Hadir Penuh (Masuk & Pulang)',
+    late: 'Terlambat',
+    absent: 'Alpa',
+    sick: 'Sakit',
+    permission: 'Izin (Izin Pribadi)',
+    official_duty: 'Izin Dinas',
+    no_check_in: 'Hanya Absen Pulang (Tanpa Masuk)',
+    no_check_out: 'Hanya Absen Masuk (Tanpa Pulang)',
+};
 
 // =======================================================================================
 // REFACTORED: The Monthly Calendar Component (Now a "Dumb" Component)
@@ -100,7 +112,7 @@ function MonthlyConfigCalendar() {
       toast({ title: "Libur Diperbarui", description: `Perubahan untuk ${format(day, 'd MMMM')} disimpan.` });
     } catch (error) { 
       console.error("Failed to update holiday via context:", error);
-      toast({ variant: "destructive", title: "Gagal Menyimpan", description: `Gagal memperbarui hari libur. Error: ${error}` });
+      toast({ variant: "destructive", title: "Gagal Menyimpan", description: "Gagal memperbarui hari libur, silakan coba lagi." });
     } finally {
       setIsSaving(false);
     }
@@ -179,6 +191,8 @@ export default function KonfigurasiAbsenPage() {
   const [checkInStart, setCheckInStart] = useState('06:00');
   const [checkInEnd, setCheckInEnd] = useState('08:00');
   const [qrCodeValue, setQrCodeValue] = useState('');
+  const [checkOutTimes, setCheckOutTimes] = useState<any>({});
+  const [attendanceWeights, setAttendanceWeights] = useState<any>(DEFAULT_WEIGHTS);
   
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const { data: userData, isLoading: isUserDataLoading } = useDoc(user, userDocRef);
@@ -201,6 +215,11 @@ export default function KonfigurasiAbsenPage() {
       setRadius(schoolConfig.radius ?? 100);
       setCheckInStart(schoolConfig.checkInStartTime ?? '06:00');
       setCheckInEnd(schoolConfig.checkInEndTime ?? '08:00');
+      setCheckOutTimes(schoolConfig.checkOutTimes || {});
+      setAttendanceWeights({
+        ...DEFAULT_WEIGHTS,
+        ...(schoolConfig.attendanceWeights || {})
+      });
       if (schoolConfig.qrCodeValue) setQrCodeValue(schoolConfig.qrCodeValue);
     }
   }, [schoolConfig]);
@@ -220,6 +239,8 @@ export default function KonfigurasiAbsenPage() {
         setIsQrLoading(!isSettingsLoading);
     }
   }, [qrCodeValue, toast, isSettingsLoading]);
+  
+  // --- Handlers ---
 
   const handleGenerateNewQr = () => {
     if (!firestore) return;
@@ -246,6 +267,15 @@ export default function KonfigurasiAbsenPage() {
     );
   };
 
+  const handleTimeChange = (day: number, type: 'start' | 'end', value: string) => {
+    setCheckOutTimes((prev: any) => ({ ...prev, [day]: { ...(prev[day] || {}), [type]: value } }));
+  };
+
+  const handleWeightChange = (key: string, value: string) => {
+    const val = parseFloat(value);
+    setAttendanceWeights((prev: any) => ({ ...prev, [key]: isNaN(val) ? 0 : val }));
+  };
+
   const handleSave = async () => {
     if (!firestore) return;
     setIsSaving(true);
@@ -259,12 +289,14 @@ export default function KonfigurasiAbsenPage() {
             useLocationValidation, useTimeValidation,
             latitude: parseFloat(latitude), longitude: parseFloat(longitude), radius: Number(radius),
             checkInStartTime: checkInStart, checkInEndTime: checkInEnd,
+            checkOutTimes,
+            attendanceWeights,
         };
 
         batch.set(schoolConfigRef, generalSettings, { merge: true });
         
         await batch.commit();
-        toast({ title: 'Pengaturan Umum Disimpan', description: 'Konfigurasi umum telah diperbarui.' });
+        toast({ title: 'Pengaturan Disimpan', description: 'Konfigurasi telah diperbarui.' });
 
     } catch (err) {
         console.error("Save failed: ", err);
@@ -336,7 +368,69 @@ export default function KonfigurasiAbsenPage() {
                 </div>
                 <div className="space-y-2"><Label htmlFor="radius">Radius Sekolah (meter)</Label><Input id="radius" type="number" value={radius} onChange={(e) => setRadius(Number(e.target.value))} disabled={!isAttendanceActive} /><p className="text-sm text-muted-foreground">Jarak toleransi maksimal dari titik pusat sekolah.</p></div>
             </div>}
+            
+            <div className="flex items-center justify-between rounded-lg border p-4">
+                <div><Label htmlFor="use-time" className="font-semibold">Gunakan Validasi Jam Kerja</Label><p className="text-sm text-muted-foreground">Wajibkan absensi di dalam jam kerja yang ditentukan.</p></div>
+                <Switch id="use-time" checked={useTimeValidation} onCheckedChange={setUseTimeValidation} disabled={!isAttendanceActive} />
+            </div>
+            {useTimeValidation && <div className="space-y-6 pt-4 mt-4 rounded-lg border p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label htmlFor="checkin-start">Jam Mulai Masuk</Label><Input id="checkin-start" type="time" value={checkInStart} onChange={e => setCheckInStart(e.target.value)} disabled={!isAttendanceActive} /></div>
+                    <div className="space-y-2"><Label htmlFor="checkin-end">Jam Selesai Masuk</Label><Input id="checkin-end" type="time" value={checkInEnd} onChange={e => setCheckInEnd(e.target.value)} disabled={!isAttendanceActive} /></div>
+                </div>
+                <div className="space-y-4">
+                    <div><Label>Jam Pulang (Spesifik per Hari)</Label><p className="text-sm text-muted-foreground">Atur rentang waktu absensi pulang untuk tiap hari kerja.</p></div>
+                    <div className="space-y-3 rounded-md border p-3">
+                        {daysOfWeek.filter(d => d.value !== 0).map(day => (
+                            <div key={day.value} className="grid grid-cols-1 sm:grid-cols-5 items-center gap-2">
+                                <Label htmlFor={`checkout-start-${day.value}`} className="sm:col-span-2 text-sm font-normal">{day.label}</Label>
+                                <div className="sm:col-span-3 grid grid-cols-2 gap-2">
+                                    <Input id={`checkout-start-${day.value}`} type="time" value={checkOutTimes[day.value]?.start || ''} onChange={e => handleTimeChange(day.value, 'start', e.target.value)} disabled={!isAttendanceActive} />
+                                    <Input id={`checkout-end-${day.value}`} type="time" value={checkOutTimes[day.value]?.end || ''} onChange={e => handleTimeChange(day.value, 'end', e.target.value)} disabled={!isAttendanceActive} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>}
         </CardContent>
+      </Card>
+
+      <Card>
+          <CardHeader>
+              <CardTitle>Manajemen Bobot Kehadiran</CardTitle>
+              <CardDescription>Tentukan bobot poin untuk setiap kategori kehadiran. Nilai ini digunakan untuk menghitung persentase kehadiran.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                  <Label htmlFor="weight-present">Hadir Penuh (1.0)</Label>
+                  <Input id="weight-present" type="number" step="0.05" min="0" max="1" value={attendanceWeights.present} onChange={e => handleWeightChange('present', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                  <Label htmlFor="weight-late">Terlambat</Label>
+                  <Input id="weight-late" type="number" step="0.05" min="0" max="1" value={attendanceWeights.late} onChange={e => handleWeightChange('late', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                  <Label htmlFor="weight-no_check_out">Tidak Absen Pulang</Label>
+                  <Input id="weight-no_check_out" type="number" step="0.05" min="0" max="1" value={attendanceWeights.no_check_out} onChange={e => handleWeightChange('no_check_out', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                  <Label htmlFor="weight-no_check_in">Tidak Absen Masuk</Label>
+                  <Input id="weight-no_check_in" type="number" step="0.05" min="0" max="1" value={attendanceWeights.no_check_in} onChange={e => handleWeightChange('no_check_in', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                  <Label htmlFor="weight-permission">Izin / Sakit</Label>
+                  <Input id="weight-permission" type="number" step="0.05" min="0" max="1" value={attendanceWeights.permission} onChange={e => handleWeightChange('permission', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                  <Label htmlFor="weight-official_duty">Izin Dinas</Label>
+                  <Input id="weight-official_duty" type="number" step="0.05" min="0" max="1" value={attendanceWeights.official_duty} onChange={e => handleWeightChange('official_duty', e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                  <Label htmlFor="weight-absent">Alpa (0)</Label>
+                  <Input id="weight-absent" type="number" step="0.05" min="0" max="1" value={attendanceWeights.absent} onChange={e => handleWeightChange('absent', e.target.value)} />
+              </div>
+          </CardContent>
       </Card>
 
       <MonthlyConfigCalendar />

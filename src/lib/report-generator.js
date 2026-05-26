@@ -1,42 +1,65 @@
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, startOfDay, endOfDay, isAfter } from 'date-fns';
 
-// Fungsi helper untuk mendapatkan informasi hari kerja dalam sebulan
+/**
+ * Retrieves the working days for a given month, excluding weekends and national holidays.
+ * THIS FUNCTION CONTAINS THE DEFINITIVE FIX.
+ * @param {import('firebase/firestore').Firestore} firestore - The Firestore instance.
+ * @param {string} month - The month in 'yyyy-MM' format.
+ * @returns {Promise<{allWorkingDays: Date[], pastWorkingDays: Date[]}>} An object containing all working days and past working days.
+ */
 async function getWorkingDaysInfo(firestore, month) {
-    const monthDate = new Date(month + '-01T12:00:00'); // Format tanggal yang aman
+    const monthDate = new Date(month + '-01T12:00:00'); // Timezone-safe date parsing
     const monthStart = startOfMonth(monthDate);
     const monthEnd = endOfMonth(monthDate);
     const today = startOfDay(new Date());
 
-    const schoolConfigSnap = await getDoc(doc(firestore, 'schoolConfig', 'default'));
-    const monthlyConfigSnap = await getDoc(doc(firestore, 'monthlyConfigs', month));
+    // Fetch school-wide and month-specific configurations simultaneously.
+    const [schoolConfigSnap, monthlyConfigSnap] = await Promise.all([
+        getDoc(doc(firestore, 'schoolConfig', 'default')),
+        getDoc(doc(firestore, 'monthlyConfigs', month))
+    ]);
 
+    // --- DEFINITIVE FIX FOR HOLIDAY LOGIC ---
+    // Use data() directly. If a document doesn't exist, it returns undefined.
     const schoolConfig = schoolConfigSnap.data() || {};
-    const monthlyConfig = monthlyConfigSnap.data() || {};
-    const offDays = schoolConfig.offDays || [0, 6]; // Default: Minggu, Sabtu
-    const holidays = monthlyConfig.holidays || [];
+    const monthlyConfig = monthlyConfigSnap.data(); // This can be undefined.
+
+    // Use optional chaining (`?.`) to safely access `holidays`.
+    // If `monthlyConfig` is undefined, `holidays` will correctly default to an empty array.
+    const holidays = monthlyConfig?.holidays || [];
+    const offDays = schoolConfig.offDays || [0, 6]; // Default to Sunday (0) and Saturday (6).
+    // --- END FIX ---
 
     const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
     
+    // Filter all days in the month to get only the actual working days.
     const allWorkingDays = allDaysInMonth.filter(day => {
         const dayStr = format(day, 'yyyy-MM-dd');
+        // A day is a working day if it's NOT an off-day AND NOT a holiday.
         return !offDays.includes(day.getDay()) && !holidays.includes(dayStr);
     });
     
-    // Pisahkan hari kerja yang sudah berlalu untuk perhitungan akurat
+    // From the working days, get the ones that have already passed (or are today).
     const pastWorkingDays = allWorkingDays.filter(day => !isAfter(day, today));
 
     return {
-        allWorkingDays: allWorkingDays,       // Semua hari kerja dalam sebulan
-        pastWorkingDays: pastWorkingDays,  // Hari kerja yang sudah lewat (termasuk hari ini)
+        allWorkingDays: allWorkingDays,
+        pastWorkingDays: pastWorkingDays,
     };
 }
 
-// Fungsi utama untuk menghasilkan laporan bulanan
+/**
+ * Generates a comprehensive monthly attendance report for all users.
+ * @param {import('firebase/firestore').Firestore} firestore - The Firestore instance.
+ * @param {string} month - The month in 'yyyy-MM' format.
+ * @returns {Promise<any[]>} A promise that resolves to an array of user report objects.
+ */
 export async function generateMonthlyReport(firestore, month) {
     const usersSnapshot = await getDocs(collection(firestore, 'users'));
     const allUsers = usersSnapshot.docs.map(d => ({ uid: d.id, ...d.data() }));
 
+    // Get the correctly filtered list of working days. Holidays are already excluded here.
     const { allWorkingDays, pastWorkingDays } = await getWorkingDaysInfo(firestore, month);
     const totalReportableDays = pastWorkingDays.length;
 
@@ -53,11 +76,12 @@ export async function generateMonthlyReport(firestore, month) {
         let sakitCount = 0;
         let alpaCount = 0;
 
-        // --- LOGIKA UTAMA: Hanya proses hari kerja yang telah berlalu ---
+        // Loop ONLY through the days that are confirmed to be past working days.
+        // Holidays will NOT be in this loop, so they can't be marked as 'Alpa'.
         for (const day of pastWorkingDays) {
             const dayStr = format(day, 'yyyy-MM-dd');
 
-            // 1. Cek apakah ada Izin/Sakit/Dinas yang disetujui
+            // 1. Check for approved leave on this day.
             const approvedLeave = userLeaves.find(l => 
                 l.status === 'approved' && isWithinInterval(day, { start: startOfDay(l.startDate.toDate()), end: endOfDay(l.endDate.toDate()) })
             );
@@ -65,29 +89,29 @@ export async function generateMonthlyReport(firestore, month) {
             if (approvedLeave) {
                 if (approvedLeave.type === 'Sakit') {
                     sakitCount++;
-                } else { // Semua selain Sakit dianggap Izin (termasuk Dinas)
+                } else { // All other leave types (Izin, Dinas) are grouped.
                     izinCount++;
                 }
-                continue; // Hari sudah dikategorikan, lanjut ke hari berikutnya
+                continue; // Day is categorized, move to the next.
             }
 
-            // 2. Jika tidak ada izin, cek catatan kehadiran
+            // 2. If no leave, check for an attendance record.
             const attendanceRecord = userAttendance.find(a => a.date === dayStr);
             
             if (attendanceRecord) {
-                // Jika ada catatan, cek kelengkapannya
+                // To be 'Hadir', both check-in and check-out must exist.
                 if (attendanceRecord.checkInTime && attendanceRecord.checkOutTime) {
-                    hadirCount++; // Hadir
+                    hadirCount++;
                 } else {
-                    alpaCount++; // Tidak absen pulang dianggap Alpa
+                    alpaCount++; // Incomplete attendance is considered 'Alpa' in this report.
                 }
             } else {
-                // Jika tidak ada izin dan tidak ada catatan kehadiran, dianggap Alpa
+                // If no leave and no attendance record, it's 'Alpa'.
                 alpaCount++;
             }
         }
 
-        // Kalkulasi persentase yang akurat berdasarkan hari yang telah berlalu
+        // Calculate percentage based on reportable days so far.
         const attendancePercentage = totalReportableDays > 0 ? (hadirCount / totalReportableDays) * 100 : 0;
         
         return {
@@ -101,7 +125,7 @@ export async function generateMonthlyReport(firestore, month) {
             sakitCount,
             alpaCount,
             attendancePercentage,
-            totalWorkingDays: allWorkingDays.length // Total hari kerja sebulan penuh
+            totalWorkingDays: allWorkingDays.length, // Total working days in the full month.
         };
     });
 
