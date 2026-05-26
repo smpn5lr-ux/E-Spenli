@@ -237,7 +237,7 @@ export async function calculateAttendanceStats(firestore: Firestore, userId: str
                 else points = weights.present;
             } else if (record.status === 'Izin') {
                 const leaveType = record.leaveType || '';
-                if (leaveType.includes('dinas full')) {
+                if (leaveType.includes('dinas full') || leaveType === 'dinas') {
                   points = weights.official_duty;
                 } else if (leaveType.includes('dinas pagi')) {
                   points = weights.dinas_pagi;
