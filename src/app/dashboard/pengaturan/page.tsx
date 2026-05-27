@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useUser, useDoc, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { Loader2, Camera, Eye, EyeOff, Upload } from 'lucide-react';
+import { Loader2, Camera, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { updatePassword, updateProfile } from 'firebase/auth';
@@ -19,7 +19,6 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { PageWrapper } from '@/components/layout/page-wrapper';
-import Image from 'next/image';
 
 export default function PengaturanPage() {
   const { user, isUserLoading: isAuthLoading } = useUser();
@@ -34,7 +33,7 @@ export default function PengaturanPage() {
 
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [name, setName] = useState('');
-  const [nip, setNip] = useState('');
+  const [nip, setNip] = useState(''); // State for NIP
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -60,14 +59,6 @@ export default function PengaturanPage() {
   const [appIconPreview, setAppIconPreview] = useState<string | null>(null);
   const appIconInputRef = useRef<HTMLInputElement>(null);
 
-  // States for Login Page Customization
-  const [isLoginSettingsSaving, setIsLoginSettingsSaving] = useState(false);
-  const [loginTitle, setLoginTitle] = useState('');
-  const [loginSubtitle, setLoginSubtitle] = useState('');
-  const [loginLogoPreview, setLoginLogoPreview] = useState<string | null>(null);
-  const loginLogoInputRef = useRef<HTMLInputElement>(null);
-
-
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
 
@@ -92,12 +83,6 @@ export default function PengaturanPage() {
       setReportCity(schoolConfigData.reportCity ?? '');
       setGeminiApiKey(schoolConfigData.geminiApiKey ?? '');
       setAppIconPreview(schoolConfigData.customAppIcon ?? null);
-
-      // Set login customization states
-      setLoginTitle(schoolConfigData.loginTitle ?? 'E-SPENLI');
-      setLoginSubtitle(schoolConfigData.loginSubtitle ?? 'Absensi Online SMPN 5 Langke Rembong');
-      setLoginLogoPreview(schoolConfigData.loginLogoUrl ?? null);
-
       if (schoolConfigData.adminNotification) {
         setNotificationTitle(schoolConfigData.adminNotification.title ?? '');
         setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
@@ -112,16 +97,33 @@ export default function PengaturanPage() {
     return userData.role === 'guru' ? { label: 'NIP', value: userData.nip } : null;
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, setPreview: (url: string | null) => void, maxSizeKB: number) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > maxSizeKB * 1024) {
-          toast({ variant: 'destructive', title: 'File Terlalu Besar', description: `Ukuran file tidak boleh melebihi ${maxSizeKB}KB.` });
+      if (file.size > 750 * 1024) {
+          toast({ variant: 'destructive', title: 'File Terlalu Besar', description: 'Ukuran foto profil tidak boleh melebihi 750KB.' });
           return;
       }
       const reader = new FileReader();
-      reader.onloadend = () => setPreview(reader.result as string);
+      reader.onloadend = () => setPhotoPreview(reader.result as string);
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAppIconChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        if (file.type !== 'image/png') {
+            toast({ variant: 'destructive', title: 'Format Salah', description: 'Logo harus dalam format PNG.' });
+            return;
+        }
+        if (file.size > 1 * 1024 * 1024) { // 1MB limit
+            toast({ variant: 'destructive', title: 'File Terlalu Besar', description: 'Ukuran logo tidak boleh melebihi 1MB.' });
+            return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => setAppIconPreview(reader.result as string);
+        reader.readAsDataURL(file);
     }
   };
 
@@ -190,6 +192,8 @@ export default function PengaturanPage() {
         let description = 'Terjadi kesalahan. Coba lagi nanti.';
         if (error.code === 'auth/requires-recent-login') {
             description = 'Untuk keamanan, Anda harus login kembali sebelum mengubah password. Silakan logout dan login ulang.';
+        } else if (error.message) {
+            description = `Terjadi kesalahan: ${error.message}`;
         }
         toast({ variant: 'destructive', title: 'Gagal Mengubah Password', description, duration: 9000 });
       } finally {
@@ -198,30 +202,30 @@ export default function PengaturanPage() {
     }
   };
 
-  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'appIcon' | 'loginPage') => {
+  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'appIcon') => {
     if (!schoolConfigRef) return;
-    let dataToSave: any = {};
+    let dataToSave = {};
     let toastTitle = '';
     let toastDescription = '';
-    let setLoading: (loading: boolean) => void = () => {};
-
+    
     switch (type) {
         case 'report':
-            setLoading = setIsReportSaving;
+            setIsReportSaving(true);
             dataToSave = { governmentAgency, educationAgency, schoolName, address, headmasterName, headmasterNip, reportCity };
             toastTitle = 'Pengaturan Laporan Disimpan';
             toastDescription = 'Informasi laporan PDF telah diperbarui.';
             break;
         case 'apiKey':
-            setLoading = setIsApiKeySaving;
+            setIsApiKeySaving(true);
             dataToSave = { geminiApiKey };
             toastTitle = 'API Key Disimpan';
             toastDescription = 'API Key untuk kutipan berhasil diperbarui.';
             break;
         case 'notification':
-            setLoading = setIsNotificationSaving;
+            setIsNotificationSaving(true);
              if (!notificationTitle.trim() || !notificationMessage.trim() || notificationDuration <= 0) {
                 toast({ variant: 'destructive', title: 'Gagal', description: 'Judul, pesan, dan durasi harus diisi dengan benar.' });
+                setIsNotificationSaving(false);
                 return;
             }
             dataToSave = { adminNotification: { title: notificationTitle, message: notificationMessage, isActive: isNotificationActive, duration: notificationDuration } };
@@ -229,32 +233,25 @@ export default function PengaturanPage() {
             toastDescription = 'Pengaturan pemberitahuan telah diperbarui.';
             break;
         case 'appIcon':
-            setLoading = setIsAppIconSaving;
-            if (appIconPreview) {
-                dataToSave = { customAppIcon: appIconPreview };
-                toastTitle = 'Logo Aplikasi Disimpan';
-                toastDescription = 'Logo aplikasi telah berhasil diperbarui.';
-            } else {
+            setIsAppIconSaving(true);
+            if (!appIconPreview) {
                 toast({ variant: 'destructive', title: 'Gagal', description: 'Tidak ada logo untuk disimpan.' });
+                setIsAppIconSaving(false);
                 return;
             }
-            break;
-        case 'loginPage':
-            setLoading = setIsLoginSettingsSaving;
-            dataToSave = { 
-                loginTitle: loginTitle, 
-                loginSubtitle: loginSubtitle, 
-                loginLogoUrl: loginLogoPreview 
-            };
-            toastTitle = 'Pengaturan Halaman Login Disimpan';
-            toastDescription = 'Tampilan halaman login telah diperbarui.';
+            dataToSave = { customAppIcon: appIconPreview };
+            toastTitle = 'Logo Aplikasi Disimpan';
+            toastDescription = 'Logo aplikasi telah berhasil diperbarui.';
             break;
     }
-    
-    setLoading(true);
+
     setDocumentNonBlocking(schoolConfigRef, dataToSave, { merge: true });
     toast({ title: toastTitle, description: toastDescription });
-    setLoading(false);
+
+    if (type === 'report') setIsReportSaving(false);
+    if (type === 'apiKey') setIsApiKeySaving(false);
+    if (type === 'notification') setIsNotificationSaving(false);
+    if (type === 'appIcon') setIsAppIconSaving(false);
   };
 
   const getInitials = (name: string | undefined | null) => name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
@@ -296,7 +293,7 @@ export default function PengaturanPage() {
                         <Camera className="h-4 w-4" />
                         <span className="sr-only">Ganti Foto</span>
                       </Button>
-                      <input type="file" ref={fileInputRef} className="hidden" accept="image/png, image/jpeg, image/gif" onChange={(e) => handleFileChange(e, setPhotoPreview, 750)} />
+                      <input type="file" ref={fileInputRef} className="hidden" accept="image/png, image/jpeg, image/gif" onChange={handleFileChange} />
                     </div>
                     <div className="space-y-1">
                        <Label className="font-semibold">Foto Profil</Label>
@@ -362,72 +359,37 @@ export default function PengaturanPage() {
             <Separator />
 
             <section>
-                <div className="mb-6">
-                    <h2 className="text-2xl font-bold tracking-tight">Personalisasi Aplikasi</h2>
-                    <p className="text-muted-foreground">Atur tampilan dan nuansa aplikasi, mulai dari halaman login hingga ikon aplikasi.</p>
-                </div>
-                <Card>
-                    <CardContent className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {/* Login Page Customization */}
-                        <div className="grid gap-6 py-6 md:grid-cols-3">
-                            <div className="md:col-span-1">
-                                <h3 className="text-lg font-medium">Halaman Login</h3>
-                                <p className="text-sm text-muted-foreground">Sesuaikan judul, subjudul, dan logo yang tampil di halaman masuk.</p>
-                            </div>
-                            <div className="md:col-span-2 grid gap-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="login-title">Judul</Label>
-                                    <Input id="login-title" value={loginTitle} onChange={e => setLoginTitle(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="login-subtitle">Subjudul</Label>
-                                    <Input id="login-subtitle" value={loginSubtitle} onChange={e => setLoginSubtitle(e.target.value)} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Logo</Label>
-                                    <div className="flex items-center gap-4">
-                                        <Avatar className="h-16 w-16 border bg-muted">
-                                            <AvatarImage src={loginLogoPreview ?? undefined} alt="Login Logo Preview" />
-                                            <AvatarFallback>Logo</AvatarFallback>
-                                        </Avatar>
-                                        <Button type="button" variant="outline" size="sm" onClick={() => loginLogoInputRef.current?.click()}>
-                                            <Upload className="mr-2 h-4 w-4" /> Unggah Logo
-                                        </Button>
-                                        <input type="file" ref={loginLogoInputRef} className="hidden" accept="image/png, image/jpeg, image/webp" onChange={(e) => handleFileChange(e, setLoginLogoPreview, 1024)} />
-                                    </div>
-                                     <p className="text-xs text-muted-foreground">Rekomendasi: format .png transparan, maks 1MB.</p>
-                                </div>
-                            </div>
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold tracking-tight">Pengaturan Logo Aplikasi</h2>
+                <p className="text-muted-foreground">Logo ini akan ditampilkan sebagai ikon aplikasi saat diinstal (PWA).</p>
+              </div>
+              <Card>
+                <CardContent className="grid gap-6 pt-6">
+                    <div className="flex items-center gap-4 sm:gap-6">
+                        <div className="relative shrink-0">
+                          <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border rounded-lg">
+                            <AvatarImage src={appIconPreview ?? '/logofix.png'} alt="App Icon Preview" />
+                            <AvatarFallback>APP</AvatarFallback>
+                          </Avatar>
+                          <Button type="button" size="icon" variant="outline" className="absolute -bottom-1 -right-1 rounded-full h-8 w-8 border-2 bg-background hover:bg-muted" onClick={() => appIconInputRef.current?.click()}>
+                            <Camera className="h-4 w-4" />
+                            <span className="sr-only">Ganti Logo</span>
+                          </Button>
+                          <input type="file" ref={appIconInputRef} className="hidden" accept="image/png" onChange={handleAppIconChange} />
                         </div>
-
-                        {/* App Icon Customization */}
-                        <div className="grid gap-6 py-6 md:grid-cols-3">
-                           <div className="md:col-span-1">
-                                <h3 className="text-lg font-medium">Ikon Aplikasi</h3>
-                                <p className="text-sm text-muted-foreground">Ikon yang akan tampil saat aplikasi diinstal di perangkat (PWA).</p>
-                            </div>
-                            <div className="md:col-span-2 flex items-center gap-4">
-                                <Avatar className="h-16 w-16 border rounded-xl bg-muted">
-                                    <AvatarImage src={appIconPreview ?? '/logofix.png'} alt="App Icon Preview" />
-                                    <AvatarFallback>APP</AvatarFallback>
-                                </Avatar>
-                                <Button type="button" variant="outline" size="sm" onClick={() => appIconInputRef.current?.click()}>
-                                    <Upload className="mr-2 h-4 w-4" /> Unggah Ikon
-                                </Button>
-                                <input type="file" ref={appIconInputRef} className="hidden" accept="image/png" onChange={(e) => handleFileChange(e, setAppIconPreview, 1024)} />
-                                <p className="text-xs text-muted-foreground">Wajib format .png, maks 1MB.</p>
-                            </div>
+                        <div className="space-y-1">
+                           <Label className="font-semibold">Logo Aplikasi</Label>
+                           <p className="text-sm text-muted-foreground">Klik ikon kamera untuk mengganti logo.<br className="hidden sm:block" />(PNG, maks 1MB)</p>
                         </div>
-                    </CardContent>
-                    <CardFooter className="border-t px-6 py-4 flex-wrap gap-2">
-                        <Button onClick={() => handleSettingsSave('loginPage')} disabled={isLoginSettingsSaving}>
-                            {isLoginSettingsSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Pengaturan Login
-                        </Button>
-                        <Button onClick={() => handleSettingsSave('appIcon')} disabled={isAppIconSaving} variant='outline'>
-                            {isAppIconSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Ikon Aplikasi
-                        </Button>
-                    </CardFooter>
-                </Card>
+                      </div>
+                </CardContent>
+                <CardFooter className="border-t px-6 py-4">
+                  <Button onClick={() => handleSettingsSave('appIcon')} disabled={isAppIconSaving}>
+                    {isAppIconSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Simpan Logo Aplikasi
+                  </Button>
+                </CardFooter>
+              </Card>
             </section>
 
             <section>
