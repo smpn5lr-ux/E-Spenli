@@ -47,11 +47,38 @@ const AdminGuide = () => (
     </div>
     <div>
         <h4 className="font-bold text-base">Cara Mengatur Absensi (Paling Penting)</h4>
-        <ol className="list-decimal pl-5 mt-2 space-y-2 text-muted-foreground">
-            <li>Masuk ke menu <b>Pengaturan</b>.</li>
-            <li>Cari kartu <b>"Pengaturan QR Code Absensi"</b>.</li>
-            <li>Di sini Anda dapat mengaktifkan/menonaktifkan sistem, mengatur jam masuk/pulang, menentukan radius lokasi, dan mengubah nilai QR Code jika diperlukan.</li>
-            <li>Klik <b>"Simpan"</b> setelah melakukan perubahan.</li>
+        <p className="text-sm text-muted-foreground mt-1 mb-2">Ini adalah halaman paling krusial. Salah konfigurasi dapat memengaruhi seluruh sistem absensi.</p>
+        <ol className="list-decimal pl-5 mt-2 space-y-3 text-muted-foreground">
+            <li>
+                Masuk ke menu <b>Pengaturan Absen</b> dari bilah sisi. Halaman ini berisi semua konfigurasi terkait absensi.
+            </li>
+            <li>
+                <b>Manajemen QR Code & Lokasi:</b>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>Unduh QR Code absensi terbaru dalam format PDF atau PNG.</li>
+                    <li>Buat QR Code baru jika yang lama dirasa tidak aman.</li>
+                    <li>Aktifkan <b>Validasi Lokasi</b>, lalu klik <b>"Dapatkan Lokasi"</b> untuk mengatur titik pusat sekolah dan radiusnya. Perubahan akan terlihat di pratinjau peta.</li>
+                </ul>
+            </li>
+            <li>
+                <b>Pengaturan Jam & Hari Kerja:</b>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>Atur rentang jam absensi masuk.</li>
+                    <li>Atur rentang jam absensi pulang yang bisa berbeda untuk setiap harinya (misal: hari Jumat pulang lebih awal).</li>
+                    <li>Pilih <b>Hari Libur Rutin</b> (misal: Sabtu dan Minggu) di mana absensi dinonaktifkan.</li>
+                    <li>Gunakan <b>Mode Libur Manual</b> untuk menonaktifkan sistem absensi sewaktu-waktu (misal: saat libur semester).</li>
+                </ul>
+            </li>
+            <li>
+                <b>Konfigurasi Lanjutan (Opsional):</b>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>Buka <b>Manajemen Bobot Kehadiran</b> untuk mengatur nilai/bobot setiap status (hadir, terlambat, alpa) yang akan memengaruhi laporan persentase.</li>
+                    <li>Buka <b>Pengaturan Hari Libur Bulanan</b> untuk menandai hari libur spesifik (misal: hari besar nasional) di bulan tertentu.</li>
+                </ul>
+            </li>
+            <li>
+                Setelah melakukan perubahan di setiap kartu (seperti Pengaturan Umum atau Bobot), jangan lupa untuk mengklik tombol <b>Simpan</b> yang sesuai di bagian bawah kartu tersebut.
+            </li>
         </ol>
     </div>
      <div>
