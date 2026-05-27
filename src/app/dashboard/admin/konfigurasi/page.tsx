@@ -15,7 +15,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Download, Loader2, RefreshCw, LocateFixed, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
+import { Download, Loader2, RefreshCw, LocateFixed, ChevronLeft, ChevronRight, HelpCircle, Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useDoc, useMemoFirebase, useUser, setDocumentNonBlocking } from '@/firebase';
 import { doc, writeBatch, onSnapshot, setDoc } from 'firebase/firestore';
@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/tooltip"
 import { useSettings } from '@/contexts/SettingsContext';
 import { DEFAULT_WEIGHTS } from '@/lib/attendance';
+import { uploadFile } from '@/lib/storage';
+
 
 // --- Days of Week (Helper) ---
 const daysOfWeek = [
@@ -174,7 +176,7 @@ export default function KonfigurasiAbsenPage() {
   const firestore = useFirestore();
   const { user, isUserLoading: isAuthLoading } = useUser();
   const router = useRouter();
-  const { schoolConfig, isSettingsLoading } = useSettings(); 
+  const { schoolConfig, isSettingsLoading, setSchoolConfig } = useSettings(); 
   
   const [isSaving, setIsSaving] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -193,6 +195,13 @@ export default function KonfigurasiAbsenPage() {
   const [qrCodeValue, setQrCodeValue] = useState('');
   const [checkOutTimes, setCheckOutTimes] = useState<any>({});
   const [attendanceWeights, setAttendanceWeights] = useState<any>(DEFAULT_WEIGHTS);
+
+  // New states for login page customization
+  const [loginTitle, setLoginTitle] = useState('E-SPENLI');
+  const [loginSubtitle, setLoginSubtitle] = useState('Absensi Online SMPN 5 Langke Rembong');
+  const [currentLoginLogoUrl, setCurrentLoginLogoUrl] = useState<string | null>(null);
+  const [loginLogoFile, setLoginLogoFile] = useState<File | null>(null);
+  const [loginLogoPreview, setLoginLogoPreview] = useState<string | null>(null);
   
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const { data: userData, isLoading: isUserDataLoading } = useDoc(user, userDocRef);
@@ -206,6 +215,7 @@ export default function KonfigurasiAbsenPage() {
 
   useEffect(() => {
     if (schoolConfig) {
+      // General settings
       setIsAttendanceActive(schoolConfig.isAttendanceActive ?? true);
       setOffDays(schoolConfig.offDays ?? [0, 6]);
       setUseLocationValidation(schoolConfig.useLocationValidation ?? true);
@@ -216,11 +226,13 @@ export default function KonfigurasiAbsenPage() {
       setCheckInStart(schoolConfig.checkInStartTime ?? '06:00');
       setCheckInEnd(schoolConfig.checkInEndTime ?? '08:00');
       setCheckOutTimes(schoolConfig.checkOutTimes || {});
-      setAttendanceWeights({
-        ...DEFAULT_WEIGHTS,
-        ...(schoolConfig.attendanceWeights || {})
-      });
+      setAttendanceWeights({ ...DEFAULT_WEIGHTS, ...(schoolConfig.attendanceWeights || {}) });
       if (schoolConfig.qrCodeValue) setQrCodeValue(schoolConfig.qrCodeValue);
+      
+      // Login page settings
+      setLoginTitle(schoolConfig.loginTitle || 'E-SPENLI');
+      setLoginSubtitle(schoolConfig.loginSubtitle || 'Absensi Online SMPN 5 Langke Rembong');
+      setCurrentLoginLogoUrl(schoolConfig.loginLogoUrl || null);
     }
   }, [schoolConfig]);
 
@@ -239,6 +251,21 @@ export default function KonfigurasiAbsenPage() {
         setIsQrLoading(!isSettingsLoading);
     }
   }, [qrCodeValue, toast, isSettingsLoading]);
+
+  const handleLoginLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        setLoginLogoFile(file);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setLoginLogoPreview(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+    } else {
+        setLoginLogoFile(null);
+        setLoginLogoPreview(null);
+    }
+ };
   
   // --- Handlers ---
 
@@ -282,8 +309,14 @@ export default function KonfigurasiAbsenPage() {
     try {
         const batch = writeBatch(firestore);
         const schoolConfigRef = doc(firestore, 'schoolConfig', 'default');
+        let newLoginLogoUrl = currentLoginLogoUrl;
 
-        const generalSettings = {
+        if (loginLogoFile) {
+            const uploadResult = await uploadFile(loginLogoFile, `settings/login-logo.png`);
+            newLoginLogoUrl = uploadResult.downloadURL;
+        }
+
+        const updatedSettings = {
             isAttendanceActive,
             offDays,
             useLocationValidation, useTimeValidation,
@@ -291,11 +324,22 @@ export default function KonfigurasiAbsenPage() {
             checkInStartTime: checkInStart, checkInEndTime: checkInEnd,
             checkOutTimes,
             attendanceWeights,
+            loginTitle,
+            loginSubtitle,
+            loginLogoUrl: newLoginLogoUrl,
         };
 
-        batch.set(schoolConfigRef, generalSettings, { merge: true });
+        batch.set(schoolConfigRef, updatedSettings, { merge: true });
         
         await batch.commit();
+        
+        // Optimistically update the context
+        setSchoolConfig(prev => ({ ...prev, ...updatedSettings }));
+
+        setLoginLogoFile(null);
+        setLoginLogoPreview(null);
+        setCurrentLoginLogoUrl(newLoginLogoUrl);
+
         toast({ title: 'Pengaturan Disimpan', description: 'Konfigurasi telah diperbarui.' });
 
     } catch (err) {
@@ -319,10 +363,49 @@ export default function KonfigurasiAbsenPage() {
     <TooltipProvider>
     <div className="space-y-6 pb-24">
         <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Pengaturan Absensi</h1>
-            <p className="text-sm text-muted-foreground">Atur parameter fundamental, hari libur rutin, dan hari libur bulanan untuk sistem absensi.</p>
+            <h1 className="text-2xl font-semibold tracking-tight">Pengaturan Aplikasi</h1>
+            <p className="text-sm text-muted-foreground">Atur parameter fundamental, personalisasi aplikasi, dan hari libur untuk sistem absensi.</p>
         </div>
 
+      <Card>
+        <CardHeader><CardTitle>Pengaturan Halaman Login</CardTitle></CardHeader>
+        <CardContent className="p-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                <div className="md:col-span-2 space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="login-title">Judul Aplikasi</Label>
+                        <Input id="login-title" value={loginTitle} onChange={e => setLoginTitle(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="login-subtitle">Subjudul Aplikasi</Label>
+                        <Input id="login-subtitle" value={loginSubtitle} onChange={e => setLoginSubtitle(e.target.value)} />
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Label>Logo Halaman Login</Label>
+                    <div className="flex flex-col items-center justify-center space-y-2">
+                        <div className="relative w-24 h-24 rounded-full border bg-muted flex items-center justify-center overflow-hidden">
+                        {loginLogoPreview ? (
+                            <Image src={loginLogoPreview} alt="Login Logo Preview" layout="fill" objectFit="cover" />
+                        ) : currentLoginLogoUrl ? (
+                            <Image src={currentLoginLogoUrl} alt="Current Login Logo" layout="fill" objectFit="cover" />
+                        ) : (
+                            <p className="text-xs text-muted-foreground text-center">Belum ada logo</p>
+                        )}
+                        </div>
+                        <Button asChild variant="outline" size="sm">
+                            <label htmlFor="login-logo-upload" className="cursor-pointer">
+                                <Upload className="mr-2 h-4 w-4" />
+                                <span>Unggah Logo</span>
+                                <Input id="login-logo-upload" type="file" accept="image/*" className="sr-only" onChange={handleLoginLogoChange} />
+                            </label>
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        </CardContent>
+      </Card>
+        
       <Card>
         <CardHeader><CardTitle>Pengaturan Umum</CardTitle></CardHeader>
         <CardContent className="p-6 space-y-4">
@@ -460,7 +543,7 @@ export default function KonfigurasiAbsenPage() {
 
       <div className="fixed bottom-20 right-6 z-50 md:bottom-6">
           <Button size="lg" onClick={handleSave} disabled={isSaving}>
-              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Pengaturan Umum
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Semua Pengaturan
           </Button>
       </div>
     </div>

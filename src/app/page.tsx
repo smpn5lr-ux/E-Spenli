@@ -37,7 +37,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { auth, useUser } from '@/firebase';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { useSettings } from '@/contexts/SettingsContext';
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Format email tidak valid" }),
@@ -58,8 +58,7 @@ export default function LoginPage() {
   const { toast } = useToast();
   const router = useRouter();
   const { user, isUserLoading, userError } = useUser();
-
-  const appLogo = PlaceHolderImages.find(p => p.id === 'app-logo');
+  const { schoolConfig, isSettingsLoading } = useSettings();
 
   useEffect(() => {
     setIsMounted(true);
@@ -90,11 +89,8 @@ export default function LoginPage() {
     }
     try {
       await signInWithEmailAndPassword(auth, values.email, values.password);
-      // On success, we don't set loading to false. The useEffect hook will redirect
-      // to the dashboard, and this component will unmount.
     } catch (error: any) {
       toast({ variant: "destructive", title: "Login Gagal", description: "Email atau password salah." });
-      // On error, we set loading to false so the user can try again.
       setIsLoginLoading(false);
     }
   };
@@ -118,7 +114,7 @@ export default function LoginPage() {
   };
 
   const showAuthSpinner =
-    !isMounted || (isUserLoading && !userError) || (isMounted && !!user);
+    !isMounted || (isUserLoading && !userError) || (isMounted && !!user) || isSettingsLoading;
 
   if (showAuthSpinner) {
     return (
@@ -135,15 +131,16 @@ export default function LoginPage() {
           <CardHeader className="text-center space-y-2">
             <div className="flex justify-center mb-2">
               <Image
-                src={appLogo?.imageUrl || "/logofix.png"}
-                alt="Logo SMPN 5 Langke Rembong"
+                src={schoolConfig?.loginLogoUrl || "/logofix.png"}
+                alt="Logo Aplikasi"
                 width={80}
                 height={80}
                 priority
+                className="rounded-full"
               />
             </div>
-            <CardTitle className="text-3xl font-bold tracking-wider">E-SPENLI</CardTitle>
-            <CardDescription>Absensi Online SMPN 5 Langke Rembong</CardDescription>
+            <CardTitle className="text-3xl font-bold tracking-wider">{schoolConfig?.loginTitle || 'E-SPENLI'}</CardTitle>
+            <CardDescription>{schoolConfig?.loginSubtitle || 'Absensi Online SMPN 5 Langke Rembong'}</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...loginForm}>

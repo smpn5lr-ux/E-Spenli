@@ -1,14 +1,18 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback, Dispatch, SetStateAction } from 'react';
 import { useFirestore } from '@/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 // --- TYPE DEFINITIONS ---
-interface SchoolConfig {
+export interface SchoolConfig {
   offDays?: number[];
   useTimeValidation?: boolean;
   checkInEndTime?: string;
+  loginTitle?: string;
+  loginSubtitle?: string;
+  loginLogoUrl?: string;
+  customAppIcon?: string;
   [key: string]: any;
 }
 
@@ -20,6 +24,7 @@ interface MonthlyConfig {
 
 interface SettingsContextType {
   schoolConfig: SchoolConfig | null;
+  setSchoolConfig: Dispatch<SetStateAction<SchoolConfig | null>>;
   monthlyConfigs: { [key: string]: MonthlyConfig };
   isSettingsLoading: boolean; // For the main school config
   isMonthlyConfigLoading: (monthId: string) => boolean;
@@ -40,7 +45,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loadingMonths, setLoadingMonths] = useState<Set<string>>(new Set());
   const [activeListeners, setActiveListeners] = useState<{ [key: string]: () => void }>({});
 
-  // Effect for the global school config (unchanged)
+  // Effect for the global school config
   useEffect(() => {
     if (!firestore) return;
     const unsub = onSnapshot(doc(firestore, 'schoolConfig', 'default'), (doc) => {
@@ -52,10 +57,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return () => unsub();
   }, [firestore]);
 
-  // 1. SUBSCRIBE: Function for components to request data for a specific month
   const subscribeToMonth = useCallback((monthId: string) => {
     if (!firestore || activeListeners[monthId] || loadingMonths.has(monthId)) {
-      return; // Already listening or currently loading
+      return;
     }
 
     setLoadingMonths(prev => new Set(prev).add(monthId));
@@ -83,7 +87,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setActiveListeners(prev => ({ ...prev, [monthId]: unsubscribe }));
   }, [firestore, activeListeners, loadingMonths]);
 
-  // 2. UPDATE: Function for components to save changes for a specific month
   const updateHolidaysForMonth = useCallback(async (monthId: string, holidays: string[], workDays: number) => {
     if (!firestore) throw new Error("Penyimpanan Gagal: Koneksi database tidak ditemukan.");
     const monthlyRef = doc(firestore, 'monthlyConfigs', monthId);
@@ -94,27 +97,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }, { merge: true });
   }, [firestore]);
 
-  // 3. CHECK LOADING STATUS: Function for components to know if a month's data is loading
   const isMonthlyConfigLoading = useCallback((monthId: string) => {
     return loadingMonths.has(monthId) || monthlyConfigs[monthId] === undefined;
   }, [loadingMonths, monthlyConfigs]);
 
-  // Cleanup all active listeners when the provider unmounts
   useEffect(() => {
     return () => {
       Object.values(activeListeners).forEach(unsubscribe => unsubscribe());
     };
   }, [activeListeners]);
 
-  // Memoize the context value
   const value = useMemo(() => ({
     schoolConfig,
+    setSchoolConfig, // Exposing the setter
     monthlyConfigs,
     isSettingsLoading,
     isMonthlyConfigLoading,
     subscribeToMonth,
     updateHolidaysForMonth,
-  }), [schoolConfig, monthlyConfigs, isSettingsLoading, isMonthlyConfigLoading, subscribeToMonth, updateHolidaysForMonth]);
+  }), [schoolConfig, monthlyConfigs, isSettingsLoading, isMonthlyConfigLoading, subscribeToMonth, updateHolidaysForMonth, setSchoolConfig]);
 
   return (
     <SettingsContext.Provider value={value}>
