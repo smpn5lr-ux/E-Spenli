@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Users,  UserCheck,  UserX,  BookUser,  Loader2,  School, LogIn, LogOut, TrendingUp, AlertCircle, Info, MailWarning, Clock4, CheckCircle2
@@ -172,8 +172,6 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                 return hasCheckedIn ? { text: 'Sudah Absen Masuk', disabled: true, page: '#' } : { text: 'Absen Masuk', disabled: false, page: '/dashboard/absen' };
 
             case 'CHECK_OUT_OPEN':
-                // **REQUIREMENT FULFILLED**: Checkout button is always enabled during the checkout window,
-                // regardless of check-in status.
                 return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' };
 
             case 'CLOSED':
@@ -181,7 +179,6 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                 const isAfterCheckInEnd = checkInEnd && now > checkInEnd;
                 const isBeforeCheckOutStart = checkOutStart && now < checkOutStart;
 
-                // **REQUIREMENT FULFILLED**: If check-in is missed, prompt for late submission.
                 if (!hasCheckedIn && isAfterCheckInEnd && isBeforeCheckOutStart) {
                     return { text: 'Ajukan Keterlambatan', disabled: false, page: '/dashboard/terlambat/ajukan' };
                 }
@@ -338,31 +335,60 @@ function useMonthlyAttendanceSummary(user: any) {
 }
 
 function useStaffDashboardStats(firestore: any, user: any) {
-  const cacheKey = 'staffDashboardStats_v4'; // Cache version updated
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const cacheKey = `staffDashboardStats_v7_${todayStr}`;
   const [stats, setStats] = useState<any>(() => getFromCache(cacheKey) || null);
-  const [isLoading, setIsLoading] = useState(stats === null);
-
   const defaultStats = useMemo(() => ({ totalStaff: 0, hadir: 0, izin: 0, sakit: 0, alpa: 0, pendingLeave: 0, pendingLate: 0, totalLate: 0 }), []);
+  
+  const { status: attendanceWindowStatus, isLoading: isWindowLoading } = useAttendanceWindow();
+  const [isSettled, setIsSettled] = useState(false);
+  const [finalStatus, setFinalStatus] = useState(attendanceWindowStatus);
 
   useEffect(() => {
-    if (!firestore || !user) return;
-    const fetchStats = async () => {
-      setIsLoading(true);
-      try {
-        const dailyStats = await getDailyStaffAttendanceStats(firestore);
-        setStats(dailyStats);
-        setInCache(cacheKey, dailyStats);
-      } catch (error) {
-        console.error("Error fetching dashboard stats:", error);
+    if (isWindowLoading) {
+      setIsSettled(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setFinalStatus(attendanceWindowStatus);
+      setIsSettled(true);
+    }, 400); // Stabilization delay
+
+    return () => clearTimeout(timer);
+  }, [isWindowLoading, attendanceWindowStatus]);
+
+  useEffect(() => {
+    if (!isSettled || !firestore || !user) {
+      return;
+    }
+
+    const processStats = async () => {
+      if (finalStatus === 'HOLIDAY') {
         setStats(defaultStats);
-      } finally {
-        setIsLoading(false);
+        setInCache(cacheKey, defaultStats);
+      } else {
+        try {
+          const cachedStats = getFromCache(cacheKey);
+          if (cachedStats) {
+            setStats(cachedStats);
+          } else {
+            const dailyStats = await getDailyStaffAttendanceStats(firestore);
+            setStats(dailyStats);
+            setInCache(cacheKey, dailyStats);
+          }
+        } catch (error) {
+          console.error("Error fetching dashboard stats:", error);
+          setStats(defaultStats);
+        }
       }
     };
-    if (stats === null) { fetchStats(); }
-  }, [firestore, user, cacheKey, defaultStats]);
 
-  return { stats: stats || defaultStats, isLoading };
+    processStats();
+
+  }, [isSettled, finalStatus, firestore, user, cacheKey, defaultStats]);
+
+  return { stats: stats || defaultStats, isLoading: !isSettled || (finalStatus !== 'HOLIDAY' && !stats) };
 }
 
 const HeadmasterDashboard = ({ user, router }: any) => {
