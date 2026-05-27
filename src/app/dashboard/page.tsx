@@ -71,14 +71,27 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
 
     useEffect(() => { 
         const timerId = setInterval(() => setCurrentTime(new Date()), 1000);
-        return () => clearInterval(timerId); 
+        return () => clearInterval(timerId);
     }, []);
 
-    const hasApprovedFullDayLeave = useMemo(() => approvedLeaveData?.length > 0, [approvedLeaveData]);
+    const isUserOnLeaveToday = useMemo(() => {
+        if (!approvedLeaveData || approvedLeaveData.length === 0) return false;
+        const today = new Date();
+        return approvedLeaveData.some((leave: any) => {
+            if (!leave.startDate?.toDate || !leave.endDate?.toDate) {
+                return false;
+            }
+            const leaveInterval = {
+                start: startOfDay(leave.startDate.toDate()),
+                end: endOfDay(leave.endDate.toDate()),
+            };
+            return isWithinInterval(today, leaveInterval);
+        });
+    }, [approvedLeaveData]);
 
     const attendanceRecord = attendanceData?.[0];
-    const checkInTime = hasApprovedFullDayLeave ? 'IZIN' : attendanceRecord?.checkInTime ? format(attendanceRecord.checkInTime.toDate(), 'HH:mm') : '--:--';
-    const checkOutTime = hasApprovedFullDayLeave ? 'IZIN' : attendanceRecord?.checkOutTime ? format(attendanceRecord.checkOutTime.toDate(), 'HH:mm') : '--:--';
+    const checkInTime = isUserOnLeaveToday ? 'IZIN' : attendanceRecord?.checkInTime ? format(attendanceRecord.checkInTime.toDate(), 'HH:mm') : '--:--';
+    const checkOutTime = isUserOnLeaveToday ? 'IZIN' : attendanceRecord?.checkOutTime ? format(attendanceRecord.checkOutTime.toDate(), 'HH:mm') : '--:--';
 
     const lateSubmission = useMemo(() => lateSubmissionData?.[0] ?? null, [lateSubmissionData]);
     const hasPendingLateSubmission = lateSubmission?.status === 'pending';
@@ -90,7 +103,7 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
         const hasCheckedOut = !!attendanceRecord?.checkOutTime;
         const now = currentTime;
 
-        if (isLoading || hasCheckedOut || attendanceWindowStatus === 'HOLIDAY' || hasPendingLateSubmission || hasApprovedLateSubmission || hasApprovedFullDayLeave) {
+        if (isLoading || hasCheckedOut || attendanceWindowStatus === 'HOLIDAY' || hasPendingLateSubmission || hasApprovedLateSubmission || isUserOnLeaveToday) {
             return null; 
         }
 
@@ -137,10 +150,10 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
             }
         }
         return null;
-    }, [attendanceRecord, isLoading, attendanceWindowStatus, schoolConfigData, currentTime, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, hasApprovedFullDayLeave]);
+    }, [attendanceRecord, isLoading, attendanceWindowStatus, schoolConfigData, currentTime, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, isUserOnLeaveToday]);
 
     const buttonStatus = useMemo(() => {
-        if (hasApprovedFullDayLeave) {
+        if (isUserOnLeaveToday) {
             return { text: 'Izin Disetujui', disabled: true, page: '#' };
         }
         if (isLoading || !schoolConfigData) {
@@ -159,7 +172,7 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
         }
 
         if (hasApprovedLateSubmission) {
-            if (attendanceWindowStatus === 'CHECK_OUT_OPEN') {
+            if (attendanceWindowStatus === 'CHECK_OUT_OPEN' && hasCheckedIn) {
                 return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' };
             }
             return { text: 'Terlambat Disetujui', disabled: true, page: '#' };
@@ -204,13 +217,13 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                 return { text: 'Memuat Status...', disabled: true, page: '#' };
         }
 
-    }, [isLoading, attendanceRecord, schoolConfigData, currentTime, attendanceWindowStatus, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, hasRejectedLateSubmission, hasApprovedFullDayLeave]);
+    }, [isLoading, attendanceRecord, schoolConfigData, currentTime, attendanceWindowStatus, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, hasRejectedLateSubmission, isUserOnLeaveToday]);
 
     return (
         <Card className="h-full flex flex-col">
             <CardHeader><CardTitle>Kehadiran Anda Hari Ini</CardTitle><CardDescription>Status kehadiran dan jam absensi Anda.</CardDescription></CardHeader>
             <CardContent className="flex flex-col flex-grow items-center justify-center space-y-6 pb-8">
-                 {hasApprovedFullDayLeave && (
+                 {isUserOnLeaveToday && (
                      <Alert variant="default" className="mb-4">
                         <CheckCircle2 className="h-4 w-4" />
                         <AlertTitle>Anda Sedang Dalam Masa Izin</AlertTitle>
@@ -245,7 +258,7 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                         <AlertDescription>{reminder.description}</AlertDescription>
                     </Alert>
                 )}
-                {attendanceWindowStatus === 'HOLIDAY' && !hasApprovedFullDayLeave && (
+                {attendanceWindowStatus === 'HOLIDAY' && !isUserOnLeaveToday && (
                      <Alert variant="default" className="mb-4">
                         <Info className="h-4 w-4" />
                         <AlertTitle>Hari Libur</AlertTitle>
@@ -412,16 +425,11 @@ const HeadmasterDashboard = ({ user, router }: any) => {
     const todaysLateSubmissionQuery = useMemoFirebase(() => user ? query(collection(firestore, 'users', user.uid, 'lateSubmissions'), where('date', '==', format(new Date(), 'yyyy-MM-dd')), limit(1)) : null, [firestore, user]);
     const { data: lateSubmissionData, isLoading: isLateSubmissionLoading } = useCollection(user, todaysLateSubmissionQuery);
 
-    const today = new Date();
     const approvedLeaveQuery = useMemoFirebase(() => {
         if (!user) return null;
         return query(
             collection(firestore, 'users', user.uid, 'leaveRequests'),
-            where('status', '==', 'approved'),
-            where('duration', '==', 'Full Day'),
-            where('startDate', '<=', Timestamp.fromDate(endOfDay(today))),
-            where('endDate', '>=', Timestamp.fromDate(startOfDay(today))),
-            limit(1)
+            where('status', '==', 'approved')
         );
     }, [firestore, user]);
     const { data: approvedLeaveData, isLoading: isLeaveLoading } = useCollection(user, approvedLeaveQuery);
@@ -493,16 +501,11 @@ const StaffDashboard = ({ user }: any) => {
     const todaysLateSubmissionQuery = useMemoFirebase(() => user ? query(collection(firestore, 'users', user.uid, 'lateSubmissions'), where('date', '==', format(new Date(), 'yyyy-MM-dd')), limit(1)) : null, [firestore, user]);
     const { data: lateSubmissionData, isLoading: isLateSubmissionLoading } = useCollection(user, todaysLateSubmissionQuery);
 
-    const today = new Date();
     const approvedLeaveQuery = useMemoFirebase(() => {
         if (!user) return null;
         return query(
             collection(firestore, 'users', user.uid, 'leaveRequests'),
-            where('status', '==', 'approved'),
-            where('duration', '==', 'Full Day'),
-            where('startDate', '<=', Timestamp.fromDate(endOfDay(today))),
-            where('endDate', '>=', Timestamp.fromDate(startOfDay(today))),
-            limit(1)
+            where('status', '==', 'approved')
         );
     }, [firestore, user]);
     const { data: approvedLeaveData, isLoading: isLeaveLoading } = useCollection(user, approvedLeaveQuery);
