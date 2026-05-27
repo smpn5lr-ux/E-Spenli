@@ -169,7 +169,9 @@ export default function PengaturanPage() {
         console.error("Password change error", error);
         let description = 'Terjadi kesalahan. Coba lagi nanti.';
         if (error.code === 'auth/requires-recent-login') {
-            description = 'Sesi Anda sudah terlalu lama. Silakan logout dan login kembali untuk mengubah password.';
+            description = 'Untuk keamanan, Anda harus login kembali sebelum mengubah password. Silakan logout dan login ulang.';
+        } else if (error.message) {
+            description = `Terjadi kesalahan: ${error.message}`;
         }
         toast({ variant: 'destructive', title: 'Gagal Mengubah Password', description, duration: 9000 });
       } finally {
