@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation'; // Import useRouter
 import { Avatar, AvatarImage, AvatarFallback } from '../ui/avatar';
 import { useUser, useFirestore, useMemoFirebase, useAuth } from '@/firebase';
 import { useDoc } from '@/firebase/firestore/use-doc';
@@ -29,13 +30,14 @@ import { ModeToggle } from '@/components/theme-toggle';
 import NetworkStatus from '@/components/utilities/NetworkStatus';
 import { ClientOnly } from '@/components/utilities/ClientOnly';
 import { RoleBasedGuide } from '@/components/guides/RoleBasedGuide';
-import { FullscreenLoader } from '@/components/utilities/fullscreen-loader'; // Import the new component
+import { FullscreenLoader } from '@/components/utilities/fullscreen-loader';
 
 export function Header({ isTransparent }: { isTransparent?: boolean }) {
   const firestore = useFirestore();
   const { user } = useUser();
   const auth = useAuth();
-  const [isLoggingOut, setIsLoggingOut] = useState(false); // Add logging out state
+  const router = useRouter(); // Initialize the router
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const appLogo = PlaceHolderImages.find(p => p.id === 'app-logo');
 
@@ -47,18 +49,16 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
   const { data: userData } = useDoc<{ name: string, role: string, photoURL?: string }>(user, userDocRef);
 
   const handleLogout = async () => {
-    if(!auth) return;
-    setIsLoggingOut(true); // Set logging out to true
+    if (!auth) return;
+    setIsLoggingOut(true);
     try {
       await signOut(auth);
-      // The redirection will be handled by the auth state listener, 
-      // but as a fallback, we can force it after a short delay.
-      setTimeout(() => {
-        window.location.href = '/'; 
-      }, 300); // 300ms delay to allow state to clear
+      // Use Next.js router for a smooth, client-side navigation
+      router.push('/');
     } catch (error) {
       console.error("Logout failed", error);
-      setIsLoggingOut(false); // Reset on error
+      // If logout fails, hide the loader to prevent getting stuck
+      setIsLoggingOut(false);
     }
   };
 

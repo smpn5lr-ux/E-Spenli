@@ -27,6 +27,7 @@ import { Loader2, WifiOff, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Activity {
   id: string;
+  userId: string; // Added for unique key generation
   name: string;
   nip: string;
   checkInTime: string;
@@ -118,6 +119,7 @@ const RecentAttendanceTable = () => {
 
         return {
           id: attendanceData.id,
+          userId: attendanceData.userId, // Pass userId for the key
           name: name || '-',
           nip: nip || '-',
           rawCheckInTime: checkInDate,
@@ -228,7 +230,7 @@ const RecentAttendanceTable = () => {
     }
 
     return sortedNumberedActivities.map((activity) => (
-      <TableRow key={activity.id}>
+      <TableRow key={`${activity.userId}-${activity.id}`}>
         <TableCell className="font-medium text-center">{activity.no}</TableCell>
         <TableCell>
           <div className="font-medium">{activity.name}</div>
