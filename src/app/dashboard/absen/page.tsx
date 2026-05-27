@@ -28,7 +28,7 @@ const getCurrentPosition = (options?: PositionOptions): Promise<GeolocationPosit
   new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, options));
 
 // --- Types ---
-type FeedbackStatus = 'idle' | 'processing' | 'locating' | 'success_in' | 'success_out' | 'error_radius' | 'error_time' | 'error_already_in' | 'error_already_out' | 'error_generic' | 'error_location' | 'info_holiday' | 'info_checked_out' | 'info_no_camera' | 'info_system_disabled' | 'info_dinas_pagi_block' | 'info_dinas_siang_block';
+type FeedbackStatus = 'idle' | 'processing' | 'locating' | 'success_in' | 'success_out' | 'error_radius' | 'error_time' | 'error_already_in' | 'error_already_out' | 'error_generic' | 'error_location' | 'info_holiday' | 'info_checked_out' | 'info_no_camera' | 'info_system_disabled' | 'info_dinas_pagi_block' | 'info_dinas_siang_block' | 'info_on_leave';
 
 // --- Main Component ---
 export default function AbsenPage() {
@@ -102,7 +102,7 @@ export default function AbsenPage() {
       if (isSystemDisabled) return 'info_system_disabled';
       if (hasCompletedAttendance) return 'info_checked_out';
       if (isHoliday) return 'info_holiday';
-      if (leaveTypeForToday === 'Dinas Full (1 Hari)' || leaveTypeForToday === 'Izin (pribadi)' || leaveTypeForToday === 'Sakit') return 'info_holiday'; // Treat as a form of holiday for scanner UI
+      if (leaveTypeForToday === 'Dinas Full (1 Hari)' || leaveTypeForToday === 'Izin (pribadi)' || leaveTypeForToday === 'Sakit') return 'info_on_leave'; // Use new status for leave
       if (hasCameraPermission === false) return 'info_no_camera';
       return 'idle';
   }, [status, isDataLoading, isSystemDisabled, hasCompletedAttendance, isHoliday, hasCameraPermission, leaveTypeForToday]);
@@ -355,6 +355,7 @@ const StatusFeedbackOverlay = ({ status, locationError, onClose, userData }: { s
             case 'error_location': return { icon: <MapPin className="h-16 w-16 text-destructive" />, title: 'Gagal: Lokasi Error', desc: locationError || 'Pastikan GPS aktif dan berikan izin akses.', cardClass: 'bg-destructive/10 border-destructive' };
             case 'info_system_disabled': return { icon: <AlertTriangle className="h-16 w-16 text-destructive" />, title: 'Sistem Dinonaktifkan', desc: 'Sistem absensi telah dinonaktifkan sementara oleh Administrator.', cardClass: 'bg-destructive/10 border-destructive' };
             case 'info_holiday': return { icon: <CalendarOff className="h-16 w-16 text-blue-500" />, title: 'Hari Libur', desc: 'Absensi tidak aktif pada hari libur rutin atau yang telah ditentukan.', cardClass: 'bg-blue-50 dark:bg-blue-950/50 border-blue-800' };
+            case 'info_on_leave': return { icon: <Info className="h-16 w-16 text-blue-500" />, title: 'Anda Sedang Izin', desc: 'Absensi tidak diperlukan karena izin Anda untuk hari ini telah disetujui.', cardClass: 'bg-blue-50 dark:bg-blue-950/50 border-blue-800' };
             case 'info_checked_out': return { icon: <CheckCircle className="h-16 w-16 text-green-500" />, title: 'Absensi Selesai', desc: 'Anda telah menyelesaikan absensi untuk hari ini.', cardClass: 'bg-green-50 dark:bg-green-950/50 border-green-800' };
             case 'info_no_camera': return { icon: <CameraOff className="h-16 w-16 text-destructive" />, title: 'Kamera Tidak Tersedia', desc: 'Izinkan akses kamera di pengaturan browser, lalu segarkan halaman ini.', cardClass: 'bg-destructive/10 border-destructive' };
             case 'info_dinas_pagi_block': return { icon: <Info className="h-16 w-16 text-blue-500" />, title: 'Info Dinas Pagi', desc: 'Absen masuk tidak diperlukan karena Anda tercatat sedang dinas pagi.', cardClass: 'bg-blue-50 dark:bg-blue-950/50 border-blue-800' };
