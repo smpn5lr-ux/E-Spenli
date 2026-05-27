@@ -33,6 +33,7 @@ export default function PengaturanPage() {
 
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [name, setName] = useState('');
+  const [nip, setNip] = useState(''); // State for NIP
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -61,8 +62,11 @@ export default function PengaturanPage() {
   const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc<any>(user, schoolConfigRef);
 
   useEffect(() => {
-    if (userData?.name) setName(userData.name);
-  }, [userData?.name]);
+    if (userData) {
+      setName(userData.name || '');
+      setNip(userData.nip || '');
+    }
+  }, [userData]);
 
   useEffect(() => {
     if (schoolConfigData) {
@@ -103,21 +107,30 @@ export default function PengaturanPage() {
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !userDocRef) return;
+    if (!user || !userDocRef || !userData) return;
     setIsProfileLoading(true);
     try {
       const authUpdates: { displayName?: string } = {};
-      const firestoreUpdates: { name?: string; photoURL?: string } = {};
-      if (name && name !== (user.displayName || userData?.name)) {
+      const firestoreUpdates: { name?: string; photoURL?: string; nip?: string; } = {};
+      if (name !== userData.name) {
         authUpdates.displayName = name;
         firestoreUpdates.name = name;
       }
       if (photoPreview) {
         firestoreUpdates.photoURL = photoPreview;
       }
+      if (nip !== userData.nip) {
+          firestoreUpdates.nip = nip;
+      }
+      
       const updatePromises: Promise<any>[] = [];
-      if (Object.keys(authUpdates).length > 0) updatePromises.push(updateProfile(user, authUpdates));
-      if (Object.keys(firestoreUpdates).length > 0) updatePromises.push(updateDoc(userDocRef, firestoreUpdates));
+      if (Object.keys(authUpdates).length > 0) {
+        updatePromises.push(updateProfile(user, authUpdates));
+      }
+      if (Object.keys(firestoreUpdates).length > 0) {
+        updatePromises.push(updateDoc(userDocRef, firestoreUpdates));
+      }
+      
       if (updatePromises.length > 0) {
           await Promise.all(updatePromises);
           toast({ title: 'Berhasil', description: 'Profil Anda telah berhasil diperbarui.' });
@@ -127,7 +140,7 @@ export default function PengaturanPage() {
       console.error("Profile update error", error);
       let description = 'Terjadi kesalahan. Coba lagi nanti.';
       if (error.code === 'auth/requires-recent-login') {
-          description = 'Sesi Anda sudah terlalu lama. Silakan logout dan login kembali.';
+          description = 'Sesi Anda sudah terlalu lama. Silakan logout dan login kembali untuk memperbarui profil.';
       }
       toast({ variant: 'destructive', title: 'Gagal Memperbarui Profil', description });
     } finally {
@@ -156,7 +169,7 @@ export default function PengaturanPage() {
         console.error("Password change error", error);
         let description = 'Terjadi kesalahan. Coba lagi nanti.';
         if (error.code === 'auth/requires-recent-login') {
-            description = 'Sesi Anda sudah terlalu lama. Silakan logout dan login kembali.';
+            description = 'Sesi Anda sudah terlalu lama. Silakan logout dan login kembali untuk mengubah password.';
         }
         toast({ variant: 'destructive', title: 'Gagal Mengubah Password', description, duration: 9000 });
       } finally {
@@ -269,7 +282,7 @@ export default function PengaturanPage() {
                     {identifierInfo && (
                       <div className="space-y-2">
                           <Label htmlFor="identifier">{identifierInfo.label}</Label>
-                          <Input id="identifier" value={identifierInfo.value || ''} readOnly />
+                          <Input id="identifier" value={nip} onChange={(e) => setNip(e.target.value)} />
                       </div>
                     )}
                 </div>
