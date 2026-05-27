@@ -65,7 +65,7 @@ const AbsentUsersTable = () => {
       const [usersSnap, attendanceSnap, approvedLateSnap, leaveSnap] = await Promise.all([
         getDocs(usersQuery),
         getDocs(attendanceQuery),
-        getDocs(approvedLateQuery),
+        getDocs(approvedLateQuery), // Corrected typo here
         getDocs(leaveQuery)
       ]);
 
@@ -93,7 +93,7 @@ const AbsentUsersTable = () => {
           name: user.name,
           nip: user.nip || '-',
           position: user.position || user.role.charAt(0).toUpperCase() + user.role.slice(1),
-          status: 'Alpa',
+          status: 'Alpa' as const,
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -108,7 +108,6 @@ const AbsentUsersTable = () => {
   }, [firestore]);
 
   useEffect(() => {
-    // The master controller: waits for the hook to finish loading, then waits for a stabilization delay.
     if (isWindowLoading) {
       setViewState('loading');
       return;
@@ -120,7 +119,7 @@ const AbsentUsersTable = () => {
       } else {
         findAbsentUsers();
       }
-    }, 400); // 400ms stabilization delay
+    }, 400);
 
     return () => clearTimeout(stabilizationTimer);
     

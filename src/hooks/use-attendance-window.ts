@@ -14,7 +14,7 @@ export interface SchoolConfig {
   checkOutStartTime?: string; // Legacy/fallback
   checkOutEndTime?: string;   // Legacy/fallback
   checkOutTimes?: { [key: number]: { start: string; end: string; }; };
-  offDays?: number[]; // Added for holiday check
+  offDays?: number[];
 }
 
 export interface MonthlyConfig {
@@ -24,7 +24,7 @@ export interface MonthlyConfig {
 export type AttendanceWindowStatus =
   | "LOADING"
   | "SESSION_INACTIVE"
-  | "HOLIDAY" // Added new status
+  | "HOLIDAY"
   | "UPCOMING"
   | "CHECK_IN_OPEN"
   | "CHECK_OUT_OPEN"
@@ -41,7 +41,6 @@ export const useAttendanceWindow = () => {
   const { user } = useUser();
   const firestore = useFirestore();
 
-  // --- School Config Fetching ---
   const configRef = useMemo(() =>
     firestore ? doc(firestore, "schoolConfig/default") : null,
     [firestore]
@@ -51,7 +50,6 @@ export const useAttendanceWindow = () => {
     configRef
   );
 
-  // --- Monthly Config Fetching (Added) ---
   const monthlyConfigId = useMemo(() => format(new Date(), 'yyyy-MM'), []);
   const monthlyConfigRef = useMemo(() => 
     firestore ? doc(firestore, 'monthlyConfigs', monthlyConfigId) : null, 
@@ -76,10 +74,9 @@ export const useAttendanceWindow = () => {
 
     const checkStatus = () => {
       const now = new Date();
-      const today = now.getDay(); // Sunday = 0, Monday = 1, ...
+      const today = now.getDay();
       const todayStr = format(now, 'yyyy-MM-dd');
 
-      // --- MODIFICATION: Holiday Check ---
       const isRegularOffDay = schoolConfig.offDays?.includes(today);
       const isSpecialHoliday = monthlyConfig?.holidays?.includes(todayStr);
 
@@ -87,7 +84,6 @@ export const useAttendanceWindow = () => {
           setStatus("HOLIDAY");
           return;
       }
-      // --- END OF MODIFICATION ---
 
       if (schoolConfig.useTimeValidation === false) {
         setStatus("CHECK_IN_OPEN");
@@ -127,18 +123,20 @@ export const useAttendanceWindow = () => {
     };
 
     checkStatus();
-    const intervalId = setInterval(checkStatus, 30000); // Check every 30 seconds
+    const intervalId = setInterval(checkStatus, 30000);
 
     return () => clearInterval(intervalId);
   }, [schoolConfig, monthlyConfig, schoolConfigLoading, monthlyConfigLoading]);
 
   const memoizedValues = useMemo(() => {
+    const isLoading = schoolConfigLoading || monthlyConfigLoading;
+
     if (!schoolConfig) {
-      return { status, config: null, checkInEnd: null, checkOutStart: null };
+      return { status, isLoading, config: null, checkInEnd: null, checkOutStart: null };
     }
     
     const today = new Date().getDay();
-    let checkoutStartStr = schoolConfig.checkOutStartTime; // Default/fallback
+    let checkoutStartStr = schoolConfig.checkOutStartTime;
 
     if (schoolConfig.checkOutTimes && schoolConfig.checkOutTimes[today]) {
       checkoutStartStr = schoolConfig.checkOutTimes[today].start;
@@ -146,11 +144,12 @@ export const useAttendanceWindow = () => {
 
     return {
       status,
-      config: schoolConfig, // Return schoolConfig as config
+      isLoading,
+      config: schoolConfig,
       checkInEnd: schoolConfig.checkInEndTime ? parseTime(schoolConfig.checkInEndTime) : null,
       checkOutStart: checkoutStartStr ? parseTime(checkoutStartStr) : null,
     };
-  }, [status, schoolConfig]);
+  }, [status, schoolConfig, schoolConfigLoading, monthlyConfigLoading]);
 
   return memoizedValues;
 };
