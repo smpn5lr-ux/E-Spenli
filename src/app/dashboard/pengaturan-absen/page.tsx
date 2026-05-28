@@ -38,6 +38,7 @@ function AttendanceWeightSettings() {
     tidakAbsenPulang: 0.5,
     tidakAbsenMasuk: 0.5,
     izin: 0.5,
+    izinPulangCepat: 0.6,
     alpa: 0
   };
 

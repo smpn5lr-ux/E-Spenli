@@ -251,6 +251,27 @@ export default function KonfigurasiAbsenPage() {
     setQrCodeValue(newQrValue);
     toast({ title: 'QR Code Diperbarui' });
   };
+  
+  const handleDownloadQr = () => {
+    if (!qrCodeDataUrl) {
+      toast({
+        variant: "destructive",
+        title: "QR Code belum dapat diunduh",
+        description: "Silakan tunggu atau buat ulang QR code.",
+      });
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = qrCodeDataUrl;
+    a.download = "absensi-qrcode.png";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast({
+      title: "Berhasil diunduh",
+      description: "QR Code berhasil diunduh.",
+    });
+  };
 
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) return toast({ variant: 'destructive', title: 'Geolocation Tidak Didukung' });
@@ -367,6 +388,21 @@ export default function KonfigurasiAbsenPage() {
                     </div>
                 </div>
                 <div className="space-y-2"><Label htmlFor="radius">Radius Sekolah (meter)</Label><Input id="radius" type="number" value={radius} onChange={(e) => setRadius(Number(e.target.value))} disabled={!isAttendanceActive} /><p className="text-sm text-muted-foreground">Jarak toleransi maksimal dari titik pusat sekolah.</p></div>
+                <div className="mt-4 rounded-lg overflow-hidden relative aspect-video border">
+                    {latitude && longitude ? (
+                        <Image
+                            src={`https://staticmap.openstreetmap.de/staticmap.php?center=${latitude},${longitude}&zoom=17&size=600x340&maptype=mapnik&markers=${latitude},${longitude},red-pushpin`}
+                            alt="Pratinjau Peta Lokasi"
+                            fill
+                            style={{ objectFit: "cover" }}
+                            unoptimized
+                        />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-muted">
+                            <p className="text-muted-foreground">Koordinat belum diatur.</p>
+                        </div>
+                    )}
+                </div>
             </div>}
             
             <div className="flex items-center justify-between rounded-lg border p-4">
@@ -448,14 +484,25 @@ export default function KonfigurasiAbsenPage() {
       <MonthlyConfigCalendar />
       
        <Card>
-          <CardHeader className="p-4 sm:p-6"><CardTitle>QR Code Absensi</CardTitle></CardHeader>
-          <CardContent className="flex flex-col items-center justify-center gap-4 p-4 sm:p-6">
-            <div className="p-4 border rounded-lg bg-white aspect-square w-full max-w-[256px] relative">
-              {isQrLoading || !qrCodeDataUrl ? <div className="w-full h-full flex items-center justify-center bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin" /></div> 
-              : <Image src={qrCodeDataUrl} alt="QR Code Absensi" width={224} height={224} className="w-full h-full" />}
-            </div>
-            <Button onClick={handleGenerateNewQr} variant="outline" className="w-full max-w-[256px]" disabled={isQrLoading}>{isQrLoading && qrCodeValue ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Buat QR Code Baru</Button>
-          </CardContent>
+            <CardHeader className="p-4 sm:p-6"><CardTitle>QR Code Absensi</CardTitle></CardHeader>
+            <CardContent className="flex flex-col items-center justify-center gap-4 p-4 sm:p-6">
+                <div className="p-4 border rounded-lg bg-white aspect-square w-full max-w-[256px] relative">
+                    {isQrLoading || !qrCodeDataUrl ? 
+                        <div className="w-full h-full flex items-center justify-center bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin" /></div> :
+                        <Image src={qrCodeDataUrl} alt="QR Code Absensi" fill style={{ objectFit: "contain" }} />
+                    }
+                </div>
+                <div className="w-full max-w-[256px] grid grid-cols-2 gap-2">
+                    <Button onClick={handleGenerateNewQr} variant="outline" disabled={isQrLoading}>
+                        {isQrLoading && qrCodeValue ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                        Buat Baru
+                    </Button>
+                    <Button onClick={handleDownloadQr} disabled={isQrLoading || !qrCodeDataUrl}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Unduh
+                    </Button>
+                </div>
+            </CardContent>
         </Card>
 
       <div className="fixed bottom-20 right-6 z-50 md:bottom-6">

@@ -27,6 +27,11 @@ const nextConfig = {
         hostname: "firebasestorage.googleapis.com",
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "staticmap.openstreetmap.de",
+        pathname: "/**",
+      },
     ],
   },
 };
@@ -37,6 +42,9 @@ const withPWA = require("@ducanh2912/next-pwa").default({
   register: true,
   skipWaiting: true,
   extendDefaultRuntimeCaching: true,
+  fallbacks: {
+    document: false,
+  },
   workboxOptions: {
     runtimeCaching: [
       {
