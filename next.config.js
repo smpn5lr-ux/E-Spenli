@@ -42,9 +42,6 @@ const withPWA = require("@ducanh2912/next-pwa").default({
   register: true,
   skipWaiting: true,
   extendDefaultRuntimeCaching: true,
-  fallbacks: {
-    document: false,
-  },
   workboxOptions: {
     runtimeCaching: [
       // CORRECTED: Use a RegExp for the urlPattern to avoid build errors.

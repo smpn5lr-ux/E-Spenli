@@ -71,6 +71,7 @@ export default function PengaturanPage() {
   const [loginTitle, setLoginTitle] = useState('');
   const [loginSubtitle, setLoginSubtitle] = useState('');
   const [loginCopyright, setLoginCopyright] = useState('');
+  const [loginCopyrightSubtitle, setLoginCopyrightSubtitle] = useState('');
   const loginLogoInputRef = useRef<HTMLInputElement>(null);
 
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
@@ -101,6 +102,7 @@ export default function PengaturanPage() {
       setLoginTitle(schoolConfigData.loginTitle ?? '');
       setLoginSubtitle(schoolConfigData.loginSubtitle ?? '');
       setLoginCopyright(schoolConfigData.loginCopyright ?? '');
+      setLoginCopyrightSubtitle(schoolConfigData.loginCopyrightSubtitle ?? '');
       if (schoolConfigData.adminNotification) {
         setNotificationTitle(schoolConfigData.adminNotification.title ?? '');
         setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
@@ -284,7 +286,8 @@ export default function PengaturanPage() {
                 loginLogoUrl: loginLogoPreview,
                 loginTitle,
                 loginSubtitle,
-                loginCopyright
+                loginCopyright,
+                loginCopyrightSubtitle
             };
             toastTitle = 'Pengaturan Login Disimpan';
             toastDescription = 'Tampilan halaman login telah diperbarui.';
@@ -440,6 +443,10 @@ export default function PengaturanPage() {
                   <div className="space-y-2">
                     <Label htmlFor="login-copyright">Teks Copyright</Label>
                     <Input id="login-copyright" value={loginCopyright} onChange={e => setLoginCopyright(e.target.value)} placeholder="Contoh: ©2024 SMPN 5 Langke Rembong" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="login-copyright-subtitle">Subjudul Copyright</Label>
+                    <Input id="login-copyright-subtitle" value={loginCopyrightSubtitle} onChange={e => setLoginCopyrightSubtitle(e.target.value)} placeholder="Contoh: Dibuat oleh Tim IT" />
                   </div>
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">

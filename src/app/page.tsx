@@ -242,7 +242,11 @@ export default function LoginPage() {
           </Form>
         </DialogContent>
       </Dialog>
-      <footer className="mt-8 text-center text-xs text-muted-foreground" dangerouslySetInnerHTML={{ __html: schoolConfig?.loginCopyright || '©2026 SMPN5LR <br /> created by team operator' }} />
+      <footer className="mt-8 text-center text-xs text-muted-foreground">
+        <span dangerouslySetInnerHTML={{ 
+          __html: `${schoolConfig?.loginCopyright || '©2026 SMPN5LR'}${schoolConfig?.loginCopyrightSubtitle ? `<br />${schoolConfig.loginCopyrightSubtitle}` : (schoolConfig?.loginCopyrightSubtitle === undefined ? '<br />created by team operator' : '')}`
+        }} />
+      </footer>
     </div>
   );
 }
