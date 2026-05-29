@@ -49,6 +49,7 @@ const statusKeyToLabelMap: { [key: string]: string } = {
     official_duty: 'Izin Dinas',
     no_check_in: 'Hanya Absen Pulang (Tanpa Masuk)',
     no_check_out: 'Hanya Absen Masuk (Tanpa Pulang)',
+    early_leave: 'Izin Pulang Cepat', // Added for consistency
 };
 
 // =======================================================================================
@@ -490,6 +491,10 @@ export default function KonfigurasiAbsenPage() {
               <div className="space-y-2">
                   <Label htmlFor="weight-dinas_siang">Dinas Siang</Label>
                   <Input id="weight-dinas_siang" type="number" step="0.05" min="0" max="1" value={attendanceWeights.dinas_siang} onChange={e => handleWeightChange('dinas_siang', e.target.value)} />
+              </div>
+               <div className="space-y-2">
+                  <Label htmlFor="weight-early_leave">Izin Pulang Cepat</Label>
+                  <Input id="weight-early_leave" type="number" step="0.05" min="0" max="1" value={attendanceWeights.early_leave} onChange={e => handleWeightChange('early_leave', e.target.value)} />
               </div>
               <div className="space-y-2">
                   <Label htmlFor="weight-absent">Alpa (0)</Label>

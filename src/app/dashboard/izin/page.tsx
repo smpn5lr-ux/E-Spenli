@@ -32,11 +32,32 @@ import { useState, useEffect, useMemo } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { PageWrapper } from '@/components/layout/page-wrapper';
 
+// --- Refactored: Centralized Leave Type Definitions ---
+const LEAVE_TYPES = {
+  sick: 'Sakit',
+  permission: 'Izin (Pribadi)',
+  official_duty: 'Dinas Full (1 Hari)',
+  dinas_pagi: 'Dinas Pagi',
+  dinas_siang: 'Dinas Siang',
+  early_leave: 'Izin Pulang Cepat',
+} as const; 
+
+// FINAL FIX: Define keys as a non-empty array literal for Zod's enum.
+const leaveTypeKeys = [
+  'sick',
+  'permission',
+  'official_duty',
+  'dinas_pagi',
+  'dinas_siang',
+  'early_leave',
+] as [keyof typeof LEAVE_TYPES, ...(keyof typeof LEAVE_TYPES)[]];
+
+
 const leaveRequestSchema = z.object({
   leaveDate: z.enum(['today', 'tomorrow'], {
     required_error: 'Tanggal pengajuan wajib dipilih.',
   }),
-  type: z.enum(['Izin Pulang Cepat', 'Sakit', 'Izin', 'Dinas Pagi', 'Dinas Siang', 'Dinas Full (1 Hari)'], {
+  type: z.enum(leaveTypeKeys, {
     required_error: 'Jenis pengajuan wajib dipilih.',
   }),
   reason: z.string().min(10, { message: 'Alasan harus diisi minimal 10 karakter.' }),
@@ -149,14 +170,11 @@ export default function IzinPage() {
         const fullDayLeaveDisabled = hasCheckedIn || (isToday && isPastCheckoutTime);
         const partialLeaveDisabled = !isToday || !hasCheckedIn || hasCheckedOut;
 
-        return [
-            { value: 'Sakit', label: 'Sakit', disabled: fullDayLeaveDisabled },
-            { value: 'Izin', label: 'Izin (pribadi)', disabled: fullDayLeaveDisabled },
-            { value: 'Dinas Full (1 Hari)', label: 'Dinas Full (1 Hari)', disabled: fullDayLeaveDisabled },
-            { value: 'Dinas Pagi', label: 'Dinas Pagi', disabled: fullDayLeaveDisabled },
-            { value: 'Izin Pulang Cepat', label: 'Izin Pulang Cepat', disabled: partialLeaveDisabled },
-            { value: 'Dinas Siang', label: 'Dinas Siang', disabled: partialLeaveDisabled },
-        ];
+        return leaveTypeKeys.map(key => ({
+            value: key,
+            label: LEAVE_TYPES[key],
+            disabled: (['early_leave', 'dinas_siang'].includes(key)) ? partialLeaveDisabled : fullDayLeaveDisabled,
+        }));
     }, [selectedDateValue, hasCheckedIn, hasCheckedOut, isPastCheckoutTime]);
 
     useEffect(() => {
@@ -178,7 +196,7 @@ export default function IzinPage() {
     async function onSubmit(values: z.infer<typeof leaveRequestSchema>) {
         if (!user || !firestore) return;
         
-        const partialLeaveTypes = ['Izin Pulang Cepat', 'Dinas Siang'];
+        const partialLeaveTypes: (keyof typeof LEAVE_TYPES)[] = ['early_leave', 'dinas_siang'];
 
         if (partialLeaveTypes.includes(values.type)) {
             if (!hasCheckedIn) {
@@ -202,8 +220,9 @@ export default function IzinPage() {
         }
 
         if (targetDateLeave && targetDateLeave.length > 0) {
-            const existingLeaveType = targetDateLeave[0].type;
-            toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: `Anda sudah pernah mengajukan '${existingLeaveType}' untuk ${format(targetDate, 'd MMMM yyyy', { locale: id })}.` });
+            const existingLeaveType = targetDateLeave[0].type as keyof typeof LEAVE_TYPES;
+            const existingLeaveLabel = LEAVE_TYPES[existingLeaveType] || existingLeaveType;
+            toast({ variant: 'destructive', title: 'Gagal Mengirim Pengajuan', description: `Anda sudah pernah mengajukan '${existingLeaveLabel}' untuk ${format(targetDate, 'd MMMM yyyy', { locale: id })}.` });
             return;
         }
 
@@ -241,7 +260,7 @@ export default function IzinPage() {
 
     const getSubmitButtonText = () => {
       if (isChecking) return 'Memeriksa data...';
-      if (selectedLeaveType === 'Izin Pulang Cepat' || selectedLeaveType === 'Dinas Siang') return 'Ajukan Izin Meninggalkan Sekolah';
+      if (selectedLeaveType === 'early_leave' || selectedLeaveType === 'dinas_siang') return 'Ajukan Izin Meninggalkan Sekolah';
       return 'Kirim Pengajuan Ketidakhadiran';
     }
 
