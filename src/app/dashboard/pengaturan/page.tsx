@@ -70,6 +70,7 @@ export default function PengaturanPage() {
   const [loginLogoPreview, setLoginLogoPreview] = useState<string | null>(null);
   const [loginTitle, setLoginTitle] = useState('');
   const [loginSubtitle, setLoginSubtitle] = useState('');
+  const [loginCopyright, setLoginCopyright] = useState('');
   const loginLogoInputRef = useRef<HTMLInputElement>(null);
 
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
@@ -99,6 +100,7 @@ export default function PengaturanPage() {
       setLoginLogoPreview(schoolConfigData.loginLogoUrl ?? null);
       setLoginTitle(schoolConfigData.loginTitle ?? '');
       setLoginSubtitle(schoolConfigData.loginSubtitle ?? '');
+      setLoginCopyright(schoolConfigData.loginCopyright ?? '');
       if (schoolConfigData.adminNotification) {
         setNotificationTitle(schoolConfigData.adminNotification.title ?? '');
         setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
@@ -281,7 +283,8 @@ export default function PengaturanPage() {
             dataToSave = { 
                 loginLogoUrl: loginLogoPreview,
                 loginTitle,
-                loginSubtitle
+                loginSubtitle,
+                loginCopyright
             };
             toastTitle = 'Pengaturan Login Disimpan';
             toastDescription = 'Tampilan halaman login telah diperbarui.';
@@ -433,6 +436,10 @@ export default function PengaturanPage() {
                   <div className="space-y-2">
                     <Label htmlFor="login-subtitle">Subjudul</Label>
                     <Input id="login-subtitle" value={loginSubtitle} onChange={e => setLoginSubtitle(e.target.value)} placeholder="Contoh: Absensi Online SMPN 5 Langke Rembong" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="login-copyright">Teks Copyright</Label>
+                    <Input id="login-copyright" value={loginCopyright} onChange={e => setLoginCopyright(e.target.value)} placeholder="Contoh: ©2024 SMPN 5 Langke Rembong" />
                   </div>
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">

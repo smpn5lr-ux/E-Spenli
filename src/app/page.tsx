@@ -242,9 +242,7 @@ export default function LoginPage() {
           </Form>
         </DialogContent>
       </Dialog>
-      <footer className="mt-8 text-center text-xs text-muted-foreground">
-        ©2026 SMPN5LR <br /> created by team operator
-      </footer>
+      <footer className="mt-8 text-center text-xs text-muted-foreground" dangerouslySetInnerHTML={{ __html: schoolConfig?.loginCopyright || '©2026 SMPN5LR <br /> created by team operator' }} />
     </div>
   );
 }
