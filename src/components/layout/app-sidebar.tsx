@@ -21,10 +21,10 @@ import {
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
 import { useUser, useFirestore, useMemoFirebase } from '@/firebase';
-import { useDoc } from '@/firebase/firestore/use-doc'; // FIX: Direct import
+import { useDoc } from '@/firebase/firestore/use-doc';
 import { doc } from 'firebase/firestore';
+import { useSettings } from '@/contexts/SettingsContext';
 
-// Add 'id' for the tour
 const defaultNavItems = [
   { id: 'nav-beranda', href: '/dashboard', icon: Home, label: 'Beranda' },
   { id: 'nav-absen', href: '/dashboard/absen', icon: QrCode, label: 'Absen' },
@@ -54,6 +54,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { user } = useUser();
   const firestore = useFirestore();
+  const { schoolConfig } = useSettings();
 
   const userDocRef = useMemoFirebase(() => {
     if (!user) return null;
@@ -103,7 +104,9 @@ export function AppSidebar() {
           })}
         </SidebarMenu>
          <div className="mt-auto p-2 text-center text-xs text-muted-foreground">
-            ©2026 SMPN5LR <br /> created by team operator
+            <span dangerouslySetInnerHTML={{ 
+              __html: `${schoolConfig?.loginCopyright || '©2026 SMPN5LR'}${schoolConfig?.loginCopyrightSubtitle ? `<br />${schoolConfig.loginCopyrightSubtitle}` : (schoolConfig?.loginCopyrightSubtitle === undefined ? '<br />created by team operator' : '')}`
+            }} />
         </div>
       </SidebarContent>
     </Sidebar>
