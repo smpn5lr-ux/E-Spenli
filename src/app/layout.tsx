@@ -18,6 +18,7 @@ export const metadata: Metadata = {
     title: 'E-SPENLI',
     statusBarStyle: 'default',
   },
+  manifest: "/api/manifest"
 };
 
 export const viewport: Viewport = {

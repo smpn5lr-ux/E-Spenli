@@ -47,6 +47,11 @@ const withPWA = require("@ducanh2912/next-pwa").default({
   },
   workboxOptions: {
     runtimeCaching: [
+      // CORRECTED: Use a RegExp for the urlPattern to avoid build errors.
+      {
+        urlPattern: /^\/api\/manifest$/,
+        handler: "NetworkOnly",
+      },
       {
         urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
         handler: "CacheFirst",

@@ -33,11 +33,18 @@ export default function PengaturanPage() {
 
   const [isProfileLoading, setIsProfileLoading] = useState(false);
   const [name, setName] = useState('');
-  const [nip, setNip] = useState(''); // State for NIP
+  const [nip, setNip] = useState('');
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // States for different settings sections
   const [isReportSaving, setIsReportSaving] = useState(false);
+  const [isApiKeySaving, setIsApiKeySaving] = useState(false);
+  const [isNotificationSaving, setIsNotificationSaving] = useState(false);
+  const [isAppIconSaving, setIsAppIconSaving] = useState(false);
+  const [isLoginSettingsSaving, setIsLoginSettingsSaving] = useState(false);
+
+  // Report settings
   const [governmentAgency, setGovernmentAgency] = useState('');
   const [educationAgency, setEducationAgency] = useState('');
   const [schoolName, setSchoolName] = useState('');
@@ -45,19 +52,25 @@ export default function PengaturanPage() {
   const [headmasterName, setHeadmasterName] = useState('');
   const [headmasterNip, setHeadmasterNip] = useState('');
   const [reportCity, setReportCity] = useState('');
-
-  const [isApiKeySaving, setIsApiKeySaving] = useState(false);
+  
+  // API key settings
   const [geminiApiKey, setGeminiApiKey] = useState('');
   
-  const [isNotificationSaving, setIsNotificationSaving] = useState(false);
+  // Notification settings
   const [notificationTitle, setNotificationTitle] = useState('');
   const [notificationMessage, setNotificationMessage] = useState('');
   const [isNotificationActive, setIsNotificationActive] = useState(false);
   const [notificationDuration, setNotificationDuration] = useState(10);
 
-  const [isAppIconSaving, setIsAppIconSaving] = useState(false);
+  // App Icon settings
   const [appIconPreview, setAppIconPreview] = useState<string | null>(null);
   const appIconInputRef = useRef<HTMLInputElement>(null);
+
+  // Login Page settings
+  const [loginLogoPreview, setLoginLogoPreview] = useState<string | null>(null);
+  const [loginTitle, setLoginTitle] = useState('');
+  const [loginSubtitle, setLoginSubtitle] = useState('');
+  const loginLogoInputRef = useRef<HTMLInputElement>(null);
 
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
@@ -83,6 +96,9 @@ export default function PengaturanPage() {
       setReportCity(schoolConfigData.reportCity ?? '');
       setGeminiApiKey(schoolConfigData.geminiApiKey ?? '');
       setAppIconPreview(schoolConfigData.customAppIcon ?? null);
+      setLoginLogoPreview(schoolConfigData.loginLogoUrl ?? null);
+      setLoginTitle(schoolConfigData.loginTitle ?? '');
+      setLoginSubtitle(schoolConfigData.loginSubtitle ?? '');
       if (schoolConfigData.adminNotification) {
         setNotificationTitle(schoolConfigData.adminNotification.title ?? '');
         setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
@@ -123,6 +139,23 @@ export default function PengaturanPage() {
         }
         const reader = new FileReader();
         reader.onloadend = () => setAppIconPreview(reader.result as string);
+        reader.readAsDataURL(file);
+    }
+  };
+  
+  const handleLoginLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        if (!['image/png', 'image/jpeg'].includes(file.type)) {
+            toast({ variant: 'destructive', title: 'Format Salah', description: 'Logo harus dalam format PNG atau JPG.' });
+            return;
+        }
+        if (file.size > 1 * 1024 * 1024) { // 1MB limit
+            toast({ variant: 'destructive', title: 'File Terlalu Besar', description: 'Ukuran logo tidak boleh melebihi 1MB.' });
+            return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => setLoginLogoPreview(reader.result as string);
         reader.readAsDataURL(file);
     }
   };
@@ -202,7 +235,7 @@ export default function PengaturanPage() {
     }
   };
 
-  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'appIcon') => {
+  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'appIcon' | 'loginPage') => {
     if (!schoolConfigRef) return;
     let dataToSave = {};
     let toastTitle = '';
@@ -243,6 +276,16 @@ export default function PengaturanPage() {
             toastTitle = 'Logo Aplikasi Disimpan';
             toastDescription = 'Logo aplikasi telah berhasil diperbarui.';
             break;
+        case 'loginPage':
+            setIsLoginSettingsSaving(true);
+            dataToSave = { 
+                loginLogoUrl: loginLogoPreview,
+                loginTitle,
+                loginSubtitle
+            };
+            toastTitle = 'Pengaturan Login Disimpan';
+            toastDescription = 'Tampilan halaman login telah diperbarui.';
+            break;
     }
 
     setDocumentNonBlocking(schoolConfigRef, dataToSave, { merge: true });
@@ -252,6 +295,7 @@ export default function PengaturanPage() {
     if (type === 'apiKey') setIsApiKeySaving(false);
     if (type === 'notification') setIsNotificationSaving(false);
     if (type === 'appIcon') setIsAppIconSaving(false);
+    if (type === 'loginPage') setIsLoginSettingsSaving(false);
   };
 
   const getInitials = (name: string | undefined | null) => name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
@@ -356,6 +400,50 @@ export default function PengaturanPage() {
         
         {isAdmin && (
           <div className="space-y-12">
+            <Separator />
+
+            <section>
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold tracking-tight">Pengaturan Halaman Login</h2>
+                <p className="text-muted-foreground">Sesuaikan tampilan halaman login untuk pengguna.</p>
+              </div>
+              <Card>
+                <CardContent className="grid gap-6 pt-6">
+                  <div className="flex items-center gap-4 sm:gap-6">
+                    <div className="relative shrink-0">
+                      <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border rounded-full">
+                        <AvatarImage src={loginLogoPreview ?? '/logofix.png'} alt="Login Logo Preview" />
+                        <AvatarFallback>LOGO</AvatarFallback>
+                      </Avatar>
+                      <Button type="button" size="icon" variant="outline" className="absolute -bottom-1 -right-1 rounded-full h-8 w-8 border-2 bg-background hover:bg-muted" onClick={() => loginLogoInputRef.current?.click()}>
+                        <Camera className="h-4 w-4" />
+                        <span className="sr-only">Ganti Logo Login</span>
+                      </Button>
+                      <input type="file" ref={loginLogoInputRef} className="hidden" accept="image/png, image/jpeg" onChange={handleLoginLogoChange} />
+                    </div>
+                    <div className="space-y-1">
+                       <Label className="font-semibold">Logo Halaman Login</Label>
+                       <p className="text-sm text-muted-foreground">Klik ikon kamera untuk mengganti logo.<br className="hidden sm:block" />(PNG, JPG, maks 1MB)</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="login-title">Judul Utama</Label>
+                    <Input id="login-title" value={loginTitle} onChange={e => setLoginTitle(e.target.value)} placeholder="Contoh: E-SPENLI" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="login-subtitle">Subjudul</Label>
+                    <Input id="login-subtitle" value={loginSubtitle} onChange={e => setLoginSubtitle(e.target.value)} placeholder="Contoh: Absensi Online SMPN 5 Langke Rembong" />
+                  </div>
+                </CardContent>
+                <CardFooter className="border-t px-6 py-4">
+                  <Button onClick={() => handleSettingsSave('loginPage')} disabled={isLoginSettingsSaving}>
+                    {isLoginSettingsSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Simpan Pengaturan Login
+                  </Button>
+                </CardFooter>
+              </Card>
+            </section>
+
             <Separator />
 
             <section>
