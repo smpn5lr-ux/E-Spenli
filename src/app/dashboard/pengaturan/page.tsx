@@ -41,7 +41,7 @@ export default function PengaturanPage() {
   const [isReportSaving, setIsReportSaving] = useState(false);
   const [isApiKeySaving, setIsApiKeySaving] = useState(false);
   const [isNotificationSaving, setIsNotificationSaving] = useState(false);
-  const [isAppIconSaving, setIsAppIconSaving] = useState(false);
+  const [isPwaSaving, setIsPwaSaving] = useState(false);
   const [isLoginSettingsSaving, setIsLoginSettingsSaving] = useState(false);
 
   // Report settings
@@ -62,9 +62,12 @@ export default function PengaturanPage() {
   const [isNotificationActive, setIsNotificationActive] = useState(false);
   const [notificationDuration, setNotificationDuration] = useState(10);
 
-  // App Icon settings
+  // PWA/App settings
   const [appIconPreview, setAppIconPreview] = useState<string | null>(null);
   const appIconInputRef = useRef<HTMLInputElement>(null);
+  const [appName, setAppName] = useState('');
+  const [appShortName, setAppShortName] = useState('');
+  const [appDescription, setAppDescription] = useState('');
 
   // Login Page settings
   const [loginLogoPreview, setLoginLogoPreview] = useState<string | null>(null);
@@ -97,12 +100,21 @@ export default function PengaturanPage() {
       setHeadmasterNip(schoolConfigData.headmasterNip ?? '');
       setReportCity(schoolConfigData.reportCity ?? '');
       setGeminiApiKey(schoolConfigData.geminiApiKey ?? '');
+      
+      // PWA settings
       setAppIconPreview(schoolConfigData.customAppIcon ?? null);
+      setAppName(schoolConfigData.appName ?? '');
+      setAppShortName(schoolConfigData.appShortName ?? '');
+      setAppDescription(schoolConfigData.appDescription ?? '');
+
+      // Login page settings
       setLoginLogoPreview(schoolConfigData.loginLogoUrl ?? null);
       setLoginTitle(schoolConfigData.loginTitle ?? '');
       setLoginSubtitle(schoolConfigData.loginSubtitle ?? '');
       setLoginCopyright(schoolConfigData.loginCopyright ?? '');
       setLoginCopyrightSubtitle(schoolConfigData.loginCopyrightSubtitle ?? '');
+      
+      // Notification settings
       if (schoolConfigData.adminNotification) {
         setNotificationTitle(schoolConfigData.adminNotification.title ?? '');
         setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
@@ -239,7 +251,7 @@ export default function PengaturanPage() {
     }
   };
 
-  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'appIcon' | 'loginPage') => {
+  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'pwa' | 'loginPage') => {
     if (!schoolConfigRef) return;
     let dataToSave = {};
     let toastTitle = '';
@@ -269,16 +281,16 @@ export default function PengaturanPage() {
             toastTitle = 'Pemberitahuan Disimpan';
             toastDescription = 'Pengaturan pemberitahuan telah diperbarui.';
             break;
-        case 'appIcon':
-            setIsAppIconSaving(true);
-            if (!appIconPreview) {
-                toast({ variant: 'destructive', title: 'Gagal', description: 'Tidak ada logo untuk disimpan.' });
-                setIsAppIconSaving(false);
-                return;
-            }
-            dataToSave = { customAppIcon: appIconPreview };
-            toastTitle = 'Logo Aplikasi Disimpan';
-            toastDescription = 'Logo aplikasi telah berhasil diperbarui.';
+        case 'pwa':
+            setIsPwaSaving(true);
+            dataToSave = { 
+                customAppIcon: appIconPreview, 
+                appName, 
+                appShortName, 
+                appDescription 
+            };
+            toastTitle = 'Pengaturan PWA Disimpan';
+            toastDescription = 'Pengaturan PWA (logo, nama, dll) telah diperbarui.';
             break;
         case 'loginPage':
             setIsLoginSettingsSaving(true);
@@ -300,7 +312,7 @@ export default function PengaturanPage() {
     if (type === 'report') setIsReportSaving(false);
     if (type === 'apiKey') setIsApiKeySaving(false);
     if (type === 'notification') setIsNotificationSaving(false);
-    if (type === 'appIcon') setIsAppIconSaving(false);
+    if (type === 'pwa') setIsPwaSaving(false);
     if (type === 'loginPage') setIsLoginSettingsSaving(false);
   };
 
@@ -462,8 +474,8 @@ export default function PengaturanPage() {
 
             <section>
               <div className="mb-6">
-                <h2 className="text-2xl font-bold tracking-tight">Pengaturan Logo Aplikasi</h2>
-                <p className="text-muted-foreground">Logo ini akan ditampilkan sebagai ikon aplikasi saat diinstal (PWA).</p>
+                <h2 className="text-2xl font-bold tracking-tight">Pengaturan Aplikasi (PWA)</h2>
+                <p className="text-muted-foreground">Sesuaikan ikon, nama, dan deskripsi aplikasi yang muncul saat diinstal di perangkat.</p>
               </div>
               <Card>
                 <CardContent className="grid gap-6 pt-6">
@@ -483,12 +495,24 @@ export default function PengaturanPage() {
                            <Label className="font-semibold">Logo Aplikasi</Label>
                            <p className="text-sm text-muted-foreground">Klik ikon kamera untuk mengganti logo.<br className="hidden sm:block" />(PNG, maks 1MB)</p>
                         </div>
-                      </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="app-name">Nama Aplikasi</Label>
+                        <Input id="app-name" value={appName} onChange={e => setAppName(e.target.value)} placeholder="Nama lengkap aplikasi" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="app-short-name">Nama Singkat</Label>
+                        <Input id="app-short-name" value={appShortName} onChange={e => setAppShortName(e.target.value)} placeholder="Nama singkat untuk layar utama" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="app-description">Deskripsi Aplikasi</Label>
+                        <Textarea id="app-description" value={appDescription} onChange={e => setAppDescription(e.target.value)} placeholder="Deskripsi singkat tentang fungsi aplikasi" />
+                    </div>
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">
-                  <Button onClick={() => handleSettingsSave('appIcon')} disabled={isAppIconSaving}>
-                    {isAppIconSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Simpan Logo Aplikasi
+                  <Button onClick={() => handleSettingsSave('pwa')} disabled={isPwaSaving}>
+                    {isPwaSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Simpan Pengaturan PWA
                   </Button>
                 </CardFooter>
               </Card>

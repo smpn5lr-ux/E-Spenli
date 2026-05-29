@@ -2,36 +2,56 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 
-// Memastikan route ini selalu dinamis dan tidak di-cache secara statis
+// Ensure this route is always dynamic and not statically cached
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  let logoUrl = '/logo.png'; // Mulai dengan logo default
+  // Default values
+  let appName = 'E-SPENLI';
+  let appShortName = 'E-SPENLI';
+  let appDescription = 'Sistem Presensi Online SMPN 5 Langke Rembong';
+  let logoUrl = '/logo.png'; // Start with a default logo
 
-  // Hanya coba akses Firestore jika admin SDK berhasil diinisialisasi
+  // Only attempt to access Firestore if the admin SDK is initialized
   if (adminDb) {
     try {
-      const logoDoc = await adminDb.collection('settings').doc('logo').get();
-      const logoData = logoDoc.data();
-      // Jika URL logo ada di database, gunakan itu
-      if (logoData?.url) {
-        logoUrl = logoData.url;
+      // Fetch both school config and logo in parallel for efficiency
+      const [configDoc, logoDoc] = await Promise.all([
+        adminDb.collection('schoolConfig').doc('default').get(),
+        adminDb.collection('settings').doc('logo').get()
+      ]);
+
+      // Process school config for app name and description
+      if (configDoc.exists) {
+        const configData = configDoc.data();
+        appName = configData?.appName || appName;
+        appShortName = configData?.appShortName || appShortName;
+        appDescription = configData?.appDescription || appDescription;
       }
+      
+      // Process logo settings
+      if (logoDoc.exists) {
+          const logoData = logoDoc.data();
+          if (logoData?.url) {
+            logoUrl = logoData.url;
+          }
+      }
+
     } catch (error) {
-      // Jika ada error saat mengambil dari Firestore, log error tersebut
-      // tapi tetap lanjutkan dengan logo default, jangan hentikan request.
-      console.error('Error fetching logo from Firestore, using default:', error);
+      // If there's an error fetching from Firestore, log it
+      // but continue with the default values, don't break the request.
+      console.error('Error fetching dynamic manifest data from Firestore, using defaults:', error);
     }
   } else {
-    // Kasus ini terjadi saat `next build` ketika environment variables tidak tersedia.
-    // Ini adalah perilaku yang diharapkan, jadi kita hanya log catatan dan pakai logo default.
-    console.log('Firebase Admin not initialized (expected during build), using default logo for manifest.');
+    // This case occurs during `next build` when environment variables might not be available.
+    // This is expected behavior, so we just log a note and use the default values.
+    console.log('Firebase Admin not initialized (expected during build), using defaults for manifest.');
   }
 
   const manifest = {
-    name: 'E-SPENLI',
-    short_name: 'E-SPENLI',
-    description: 'Sistem Presensi Online SMPN 5 Langke Rembong',
+    name: appName,
+    short_name: appShortName,
+    description: appDescription,
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',
@@ -52,8 +72,8 @@ export async function GET() {
     ],
   };
 
-  // Selalu kembalikan respons sukses dengan manifest yang valid
-  // Penting: Set header Content-Type ke 'application/manifest+json'
+  // Always return a successful response with a valid manifest
+  // Important: Set the Content-Type header to 'application/manifest+json'
   return new NextResponse(JSON.stringify(manifest), {
     headers: { 'Content-Type': 'application/manifest+json' },
   });
