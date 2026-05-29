@@ -411,7 +411,7 @@ export default function PengaturanPage() {
                 <CardContent className="grid gap-6 pt-6">
                   <div className="flex items-center gap-4 sm:gap-6">
                     <div className="relative shrink-0">
-                      <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border rounded-full">
+                      <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border rounded-md">
                         <AvatarImage src={loginLogoPreview ?? '/logofix.png'} alt="Login Logo Preview" />
                         <AvatarFallback>LOGO</AvatarFallback>
                       </Avatar>

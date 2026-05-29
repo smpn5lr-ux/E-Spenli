@@ -136,7 +136,7 @@ export default function LoginPage() {
                 width={80}
                 height={80}
                 priority
-                className="rounded-full"
+                className="rounded-md"
               />
             </div>
             <CardTitle className="text-3xl font-bold tracking-wider">{schoolConfig?.loginTitle || 'E-SPENLI'}</CardTitle>
