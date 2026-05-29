@@ -74,11 +74,33 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
         return () => clearInterval(timerId);
     }, []);
 
+    const onDutyStatus = useMemo(() => {
+        if (!approvedLeaveData || approvedLeaveData.length === 0) return null;
+        const today = new Date();
+        const todayLeave = approvedLeaveData.find((leave: any) => {
+            if (!leave.startDate?.toDate || !leave.endDate?.toDate) return false;
+            const isDinas = leave.type === 'dinas_pagi' || leave.type === 'dinas_siang';
+            if (!isDinas) return false;
+
+            const leaveInterval = {
+                start: startOfDay(leave.startDate.toDate()),
+                end: endOfDay(leave.endDate.toDate()),
+            };
+            return isWithinInterval(today, leaveInterval);
+        });
+        return todayLeave?.type || null; // 'dinas_pagi', 'dinas_siang', or null
+    }, [approvedLeaveData]);
+
     const isUserOnLeaveToday = useMemo(() => {
         if (!approvedLeaveData || approvedLeaveData.length === 0) return false;
         const today = new Date();
         return approvedLeaveData.some((leave: any) => {
             if (!leave.startDate?.toDate || !leave.endDate?.toDate) {
+                return false;
+            }
+            // Exclude dinas types from this full-day leave check
+            const isDinas = leave.type === 'dinas_pagi' || leave.type === 'dinas_siang';
+            if (isDinas) {
                 return false;
             }
             const leaveInterval = {
@@ -103,7 +125,7 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
         const hasCheckedOut = !!attendanceRecord?.checkOutTime;
         const now = currentTime;
 
-        if (isLoading || hasCheckedOut || attendanceWindowStatus === 'HOLIDAY' || hasPendingLateSubmission || hasApprovedLateSubmission || isUserOnLeaveToday) {
+        if (isLoading || hasCheckedOut || attendanceWindowStatus === 'HOLIDAY' || hasPendingLateSubmission || hasApprovedLateSubmission || isUserOnLeaveToday || onDutyStatus) {
             return null; 
         }
 
@@ -150,18 +172,30 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
             }
         }
         return null;
-    }, [attendanceRecord, isLoading, attendanceWindowStatus, schoolConfigData, currentTime, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, isUserOnLeaveToday]);
+    }, [attendanceRecord, isLoading, attendanceWindowStatus, schoolConfigData, currentTime, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, isUserOnLeaveToday, onDutyStatus]);
 
     const buttonStatus = useMemo(() => {
-        if (isUserOnLeaveToday) {
-            return { text: 'Izin Disetujui', disabled: true, page: '#' };
-        }
         if (isLoading || !schoolConfigData) {
             return { text: 'Memuat...', disabled: true, page: '#' };
         }
 
         const hasCheckedIn = !!attendanceRecord?.checkInTime;
         const hasCheckedOut = !!attendanceRecord?.checkOutTime;
+        
+        // Handle Official Duty (Dinas) status first
+        if (onDutyStatus) {
+            if (hasCheckedOut) {
+                return { text: 'Absensi Selesai', disabled: true, page: '#' };
+            }
+            if (hasCheckedIn) {
+                return { text: 'Absen Pulang (Dinas)', disabled: false, page: '/dashboard/absen' };
+            }
+            return { text: 'Absen Masuk (Dinas)', disabled: false, page: '/dashboard/absen' };
+        }
+
+        if (isUserOnLeaveToday) {
+            return { text: 'Izin Disetujui', disabled: true, page: '#' };
+        }
 
         if (hasCheckedOut) {
             return { text: 'Absensi Selesai', disabled: true, page: '#' };
@@ -217,12 +251,21 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
                 return { text: 'Memuat Status...', disabled: true, page: '#' };
         }
 
-    }, [isLoading, attendanceRecord, schoolConfigData, currentTime, attendanceWindowStatus, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, hasRejectedLateSubmission, isUserOnLeaveToday]);
+    }, [isLoading, attendanceRecord, schoolConfigData, currentTime, attendanceWindowStatus, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, hasRejectedLateSubmission, isUserOnLeaveToday, onDutyStatus]);
 
     return (
         <Card className="h-full flex flex-col">
             <CardHeader><CardTitle>Kehadiran Anda Hari Ini</CardTitle><CardDescription>Status kehadiran dan jam absensi Anda.</CardDescription></CardHeader>
             <CardContent className="flex flex-col flex-grow items-center justify-center space-y-6 pb-8">
+                 {onDutyStatus && (
+                    <Alert variant="default" className="mb-4">
+                        <Info className="h-4 w-4" />
+                        <AlertTitle>Anda Sedang Bertugas Dinas</AlertTitle>
+                        <AlertDescription>
+                            Sistem absensi terbuka untuk Anda. Silakan lakukan absen masuk dan pulang kapan saja selama hari ini.
+                        </AlertDescription>
+                    </Alert>
+                )}
                  {isUserOnLeaveToday && (
                      <Alert variant="default" className="mb-4">
                         <CheckCircle2 className="h-4 w-4" />

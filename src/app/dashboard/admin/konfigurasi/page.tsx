@@ -167,7 +167,7 @@ function MonthlyConfigCalendar() {
 }
 
 // =======================================================================================
-// Original Configuration Page Component (Largely Unchanged)
+// Original Configuration Page Component (Now with specific save for weights)
 // =======================================================================================
 export default function KonfigurasiAbsenPage() {
   const { toast } = useToast();
@@ -177,6 +177,7 @@ export default function KonfigurasiAbsenPage() {
   const { schoolConfig, isSettingsLoading } = useSettings(); 
   
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingWeights, setIsSavingWeights] = useState(false); // State for weights save button
   const [isLocating, setIsLocating] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [isQrLoading, setIsQrLoading] = useState(true);
@@ -311,7 +312,7 @@ export default function KonfigurasiAbsenPage() {
             latitude: parseFloat(latitude), longitude: parseFloat(longitude), radius: Number(radius),
             checkInStartTime: checkInStart, checkInEndTime: checkInEnd,
             checkOutTimes,
-            attendanceWeights,
+            attendanceWeights, // Still saved here to ensure consistency if user clicks main button
         };
 
         batch.set(schoolConfigRef, generalSettings, { merge: true });
@@ -324,6 +325,22 @@ export default function KonfigurasiAbsenPage() {
         toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: 'Terjadi kesalahan saat menyimpan data.' });
     } finally {
         setIsSaving(false);
+    }
+  };
+
+  // ADDED: Specific handler to save only the attendance weights
+  const handleSaveWeights = async () => {
+    if (!firestore) return;
+    setIsSavingWeights(true);
+    try {
+        const schoolConfigRef = doc(firestore, 'schoolConfig', 'default');
+        await setDoc(schoolConfigRef, { attendanceWeights }, { merge: true });
+        toast({ title: 'Bobot Disimpan', description: 'Bobot kehadiran telah berhasil diperbarui.' });
+    } catch (err) {
+        console.error("Save weights failed: ", err);
+        toast({ variant: 'destructive', title: 'Gagal Menyimpan Bobot', description: 'Terjadi kesalahan saat menyimpan data.' });
+    } finally {
+        setIsSavingWeights(false);
     }
   };
 
@@ -479,6 +496,13 @@ export default function KonfigurasiAbsenPage() {
                   <Input id="weight-absent" type="number" step="0.05" min="0" max="1" value={attendanceWeights.absent} onChange={e => handleWeightChange('absent', e.target.value)} />
               </div>
           </CardContent>
+          {/* ADDED: CardFooter with a dedicated save button for weights */}
+          <CardFooter className="flex justify-end p-6 pt-0">
+              <Button onClick={handleSaveWeights} disabled={isSavingWeights || isSaving}>
+                  {(isSavingWeights) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Simpan Bobot
+              </Button>
+          </CardFooter>
       </Card>
 
       <MonthlyConfigCalendar />
@@ -506,7 +530,7 @@ export default function KonfigurasiAbsenPage() {
         </Card>
 
       <div className="fixed bottom-20 right-6 z-50 md:bottom-6">
-          <Button size="lg" onClick={handleSave} disabled={isSaving}>
+          <Button size="lg" onClick={handleSave} disabled={isSaving || isSavingWeights}>
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Pengaturan Umum
           </Button>
       </div>
