@@ -78,10 +78,10 @@ export default function PengaturanPage() {
   const loginLogoInputRef = useRef<HTMLInputElement>(null);
 
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
-  const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
+  const settingsRef = useMemoFirebase(() => firestore ? doc(firestore, 'settings', 'school') : null, [firestore]);
 
   const { data: userData, isLoading: isUserDataLoading } = useDoc<{ name: string; role: string; email: string; nip?: string; photoURL?: string; }>(user, userDocRef);
-  const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc<any>(user, schoolConfigRef);
+  const { data: settingsData, isLoading: isSettingsLoading } = useDoc<any>(user, settingsRef);
 
   useEffect(() => {
     if (userData) {
@@ -91,38 +91,44 @@ export default function PengaturanPage() {
   }, [userData]);
 
   useEffect(() => {
-    if (schoolConfigData) {
-      setGovernmentAgency(schoolConfigData.governmentAgency ?? '');
-      setEducationAgency(schoolConfigData.educationAgency ?? '');
-      setSchoolName(schoolConfigData.schoolName ?? '');
-      setAddress(schoolConfigData.address ?? '');
-      setHeadmasterName(schoolConfigData.headmasterName ?? '');
-      setHeadmasterNip(schoolConfigData.headmasterNip ?? '');
-      setReportCity(schoolConfigData.reportCity ?? '');
-      setGeminiApiKey(schoolConfigData.geminiApiKey ?? '');
+    if (settingsData) {
+      // Report Header settings
+      const reportHeader = settingsData.reportHeader || {};
+      setGovernmentAgency(reportHeader.governmentAgency ?? '');
+      setEducationAgency(reportHeader.educationAgency ?? '');
+      setSchoolName(reportHeader.schoolName ?? '');
+      setAddress(reportHeader.address ?? '');
+      setHeadmasterName(reportHeader.headmasterName ?? '');
+      setHeadmasterNip(reportHeader.headmasterNip ?? '');
+      setReportCity(reportHeader.reportCity ?? '');
+      
+      // Gemini API Key
+      setGeminiApiKey(settingsData.geminiApiKey ?? '');
       
       // PWA settings
-      setAppIconPreview(schoolConfigData.customAppIcon ?? null);
-      setAppName(schoolConfigData.appName ?? '');
-      setAppShortName(schoolConfigData.appShortName ?? '');
-      setAppDescription(schoolConfigData.appDescription ?? '');
+      const pwa = settingsData.pwa || {};
+      setAppIconPreview(pwa.logo ?? null);
+      setAppName(pwa.name ?? '');
+      setAppShortName(pwa.shortName ?? '');
+      setAppDescription(pwa.description ?? '');
 
       // Login page settings
-      setLoginLogoPreview(schoolConfigData.loginLogoUrl ?? null);
-      setLoginTitle(schoolConfigData.loginTitle ?? '');
-      setLoginSubtitle(schoolConfigData.loginSubtitle ?? '');
-      setLoginCopyright(schoolConfigData.loginCopyright ?? '');
-      setLoginCopyrightSubtitle(schoolConfigData.loginCopyrightSubtitle ?? '');
+      const loginPage = settingsData.loginPage || {};
+      setLoginLogoPreview(loginPage.logoUrl ?? null);
+      setLoginTitle(loginPage.title ?? '');
+      setLoginSubtitle(loginPage.subtitle ?? '');
+      setLoginCopyright(loginPage.copyright ?? '');
+      setLoginCopyrightSubtitle(loginPage.copyrightSubtitle ?? '');
       
       // Notification settings
-      if (schoolConfigData.adminNotification) {
-        setNotificationTitle(schoolConfigData.adminNotification.title ?? '');
-        setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
-        setIsNotificationActive(schoolConfigData.adminNotification.isActive ?? false);
-        setNotificationDuration(schoolConfigData.adminNotification.duration ?? 10);
+      if (settingsData.adminNotification) {
+        setNotificationTitle(settingsData.adminNotification.title ?? '');
+        setNotificationMessage(settingsData.adminNotification.message ?? '');
+        setIsNotificationActive(settingsData.adminNotification.isActive ?? false);
+        setNotificationDuration(settingsData.adminNotification.duration ?? 10);
       }
     }
-  }, [schoolConfigData]);
+  }, [settingsData]);
 
   const getIdentifier = () => {
     if (!userData) return null;
@@ -252,7 +258,7 @@ export default function PengaturanPage() {
   };
 
   const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'pwa' | 'loginPage') => {
-    if (!schoolConfigRef) return;
+    if (!settingsRef) return;
     let dataToSave = {};
     let toastTitle = '';
     let toastDescription = '';
@@ -260,7 +266,7 @@ export default function PengaturanPage() {
     switch (type) {
         case 'report':
             setIsReportSaving(true);
-            dataToSave = { governmentAgency, educationAgency, schoolName, address, headmasterName, headmasterNip, reportCity };
+            dataToSave = { reportHeader: { governmentAgency, educationAgency, schoolName, address, headmasterName, headmasterNip, reportCity } };
             toastTitle = 'Pengaturan Laporan Disimpan';
             toastDescription = 'Informasi laporan PDF telah diperbarui.';
             break;
@@ -284,10 +290,12 @@ export default function PengaturanPage() {
         case 'pwa':
             setIsPwaSaving(true);
             dataToSave = { 
-                customAppIcon: appIconPreview, 
-                appName, 
-                appShortName, 
-                appDescription 
+                pwa: { 
+                    logo: appIconPreview, 
+                    name: appName, 
+                    shortName: appShortName, 
+                    description: appDescription 
+                }
             };
             toastTitle = 'Pengaturan PWA Disimpan';
             toastDescription = 'Pengaturan PWA (logo, nama, dll) telah diperbarui.';
@@ -295,18 +303,20 @@ export default function PengaturanPage() {
         case 'loginPage':
             setIsLoginSettingsSaving(true);
             dataToSave = { 
-                loginLogoUrl: loginLogoPreview,
-                loginTitle,
-                loginSubtitle,
-                loginCopyright,
-                loginCopyrightSubtitle
+                loginPage: {
+                    logoUrl: loginLogoPreview,
+                    title: loginTitle,
+                    subtitle: loginSubtitle,
+                    copyright: loginCopyright,
+                    copyrightSubtitle: loginCopyrightSubtitle
+                }
             };
             toastTitle = 'Pengaturan Login Disimpan';
             toastDescription = 'Tampilan halaman login telah diperbarui.';
             break;
     }
 
-    setDocumentNonBlocking(schoolConfigRef, dataToSave, { merge: true });
+    setDocumentNonBlocking(settingsRef, dataToSave, { merge: true });
     toast({ title: toastTitle, description: toastDescription });
 
     if (type === 'report') setIsReportSaving(false);
@@ -318,7 +328,7 @@ export default function PengaturanPage() {
 
   const getInitials = (name: string | undefined | null) => name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
 
-  const isLoading = isUserDataLoading || isAuthLoading || isConfigLoading;
+  const isLoading = isUserDataLoading || isAuthLoading || isSettingsLoading;
   const isAdmin = userData?.role === 'admin';
   const currentPhoto = photoPreview || userData?.photoURL || user?.photoURL;
   const identifierInfo = getIdentifier();
