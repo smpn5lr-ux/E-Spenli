@@ -7,52 +7,35 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   // Default values
-  let appName = 'E-SPENLI';
-  let appShortName = 'E-SPENLI';
+  let schoolName = 'E-SPENLI';
+  let shortName = 'E-SPENLI';
   let appDescription = 'Sistem Presensi Online SMPN 5 Langke Rembong';
-  let logoUrl = '/logo.png'; // Start with a default logo
+  let logoUrl = '/logofix.png';
 
   // Only attempt to access Firestore if the admin SDK is initialized
-  if (adminDb) {
+  if (adminDb) { 
     try {
-      // Fetch both school config and logo in parallel for efficiency
-      const [configDoc, logoDoc] = await Promise.all([
-        adminDb.collection('schoolConfig').doc('default').get(),
-        adminDb.collection('settings').doc('logo').get()
-      ]);
+      const settingsDoc = await adminDb.collection('settings').doc('school').get();
 
-      // Process school config for app name and description
-      if (configDoc.exists) {
-        const configData = configDoc.data();
-        appName = configData?.appName || appName;
-        appShortName = configData?.appShortName || appShortName;
-        appDescription = configData?.appDescription || appDescription;
+      if (settingsDoc.exists) {
+        const config = settingsDoc.data();
+        schoolName = config?.school?.name || 'E-SPENLI';
+        shortName = config?.school?.shortName || schoolName;
+        appDescription = `Aplikasi Absensi Digital untuk ${schoolName}`;
+        logoUrl = config?.reportHeader?.logo || '/logofix.png';
       }
-      
-      // Process logo settings
-      if (logoDoc.exists) {
-          const logoData = logoDoc.data();
-          if (logoData?.url) {
-            logoUrl = logoData.url;
-          }
-      }
-
     } catch (error) {
-      // If there's an error fetching from Firestore, log it
-      // but continue with the default values, don't break the request.
       console.error('Error fetching dynamic manifest data from Firestore, using defaults:', error);
     }
   } else {
-    // This case occurs during `next build` when environment variables might not be available.
-    // This is expected behavior, so we just log a note and use the default values.
-    console.log('Firebase Admin not initialized (expected during build), using defaults for manifest.');
+    console.log('Firebase Admin not initialized, using defaults for manifest.');
   }
 
   const manifest = {
-    name: appName,
-    short_name: appShortName,
+    name: `${schoolName} Absensi`,
+    short_name: shortName,
     description: appDescription,
-    start_url: '/',
+    start_url: '/dashboard',
     display: 'standalone',
     background_color: '#ffffff',
     theme_color: '#101828',
@@ -72,8 +55,6 @@ export async function GET() {
     ],
   };
 
-  // Always return a successful response with a valid manifest
-  // Important: Set the Content-Type header to 'application/manifest+json'
   return new NextResponse(JSON.stringify(manifest), {
     headers: { 'Content-Type': 'application/manifest+json' },
   });
