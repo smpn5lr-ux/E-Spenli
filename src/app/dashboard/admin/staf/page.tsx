@@ -1,13 +1,14 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useFirestore, useUser } from '@/firebase';
 import { collection, query, getDocs, where } from 'firebase/firestore';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { id } from 'date-fns/locale'; // FINAL FIX: Added missing import for Indonesian locale
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, UserPlus, Download } from 'lucide-react';
+import { Loader2, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { useSettings } from '@/contexts/SettingsContext';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -17,7 +18,7 @@ interface UserData {
   uid: string;
   displayName: string;
   nip?: string;
-  status?: string; // e.g., 'PNS', 'Honorer'
+  status?: string;
   role: string;
 }
 
@@ -29,39 +30,24 @@ interface AttendanceStats {
 }
 
 // =======================================================================================
-// Staf (Staff List) Page Component
+// Staf (Staff List) Page Component - REWRITTEN for new SettingsContext
 // =======================================================================================
 export default function StafPage() {
   const firestore = useFirestore();
   const { isUserLoading: isAuthLoading } = useUser();
   const [users, setUsers] = useState<UserData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCalculatingStats, setIsCalculatingStats] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Get settings and configs from the centralized context
-  const {
-    schoolConfig, 
-    monthlyConfigs, 
-    subscribeToMonth, 
-    isMonthlyConfigLoading 
-  } = useSettings();
+  const { schoolConfig, holidays, isSettingsLoading } = useSettings();
 
-  const monthId = selectedMonth;
-  const currentMonthlyConfig = monthlyConfigs[monthId];
-
-  // State to hold the calculated attendance stats for each user
   const [attendanceStats, setAttendanceStats] = useState<Map<string, AttendanceStats>>(new Map());
 
-  // Subscribe to the selected month's config
-  useEffect(() => {
-    subscribeToMonth(monthId);
-  }, [monthId, subscribeToMonth]);
-
-  // Fetch all users (teachers and staff)
   useEffect(() => {
     if (!firestore) return;
     const fetchUsers = async () => {
@@ -76,69 +62,85 @@ export default function StafPage() {
     fetchUsers();
   }, [firestore]);
 
-  // Logic to calculate attendance for all users on this page
-  useEffect(() => {
-    if (users.length === 0 || !firestore || !currentMonthlyConfig || !schoolConfig) return;
+  const effectiveWorkDays = useMemo(() => {
+    if (!schoolConfig) return 0;
 
-    const calculateAllStats = async () => {
-      setIsLoading(true);
-      const [year, month] = selectedMonth.split('-').map(Number);
-      const startDate = startOfMonth(new Date(year, month - 1));
-      const endDate = endOfMonth(startDate);
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const monthStartDate = startOfMonth(new Date(year, month - 1));
+    const monthEndDate = endOfMonth(monthStartDate);
+    const allDays = eachDayOfInterval({ start: monthStartDate, end: monthEndDate });
 
-      const recurringOffDays = new Set(schoolConfig.offDays ?? []);
-      const holidays = new Set(currentMonthlyConfig.holidays ?? []);
+    const recurringOffDays = new Set(schoolConfig.offDays ?? []);
+    
+    const workDays = allDays.filter(day => {
+        const dayString = format(day, 'yyyy-MM-dd');
+        const dayOfWeek = day.getDay();
+        return !recurringOffDays.has(dayOfWeek) && !holidays.has(dayString);
+    });
 
-      const newStats = new Map<string, AttendanceStats>();
+    return workDays.length;
+  }, [selectedMonth, schoolConfig, holidays]);
 
-      await Promise.all(users.map(async (user) => {
-        const attendanceRef = collection(firestore, `users/${user.uid}/attendance`);
-        const q = query(attendanceRef, where('date', '>=', format(startDate, 'yyyy-MM-dd')), where('date', '<=', format(endDate, 'yyyy-MM-dd')));
-        const attendanceSnapshot = await getDocs(q);
-        const recordsMap = new Map(attendanceSnapshot.docs.map(doc => [doc.id, doc.data()]));
+  const calculateAllStats = useCallback(async () => {
+    if (users.length === 0 || !firestore || !schoolConfig) return;
 
-        const stats: AttendanceStats = { present: 0, sick: 0, permission: 0, absent: 0 };
+    setIsCalculatingStats(true);
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const startDate = startOfMonth(new Date(year, month - 1));
+    const endDate = endOfMonth(startDate);
 
-        let currentDay = new Date(startDate);
-        while (currentDay <= endDate) {
-          const dayString = format(currentDay, 'yyyy-MM-dd');
-          const dayOfWeek = currentDay.getDay();
+    const recurringOffDays = new Set(schoolConfig.offDays ?? []);
+    const newStats = new Map<string, AttendanceStats>();
 
-          if (recurringOffDays.has(dayOfWeek) || holidays.has(dayString)) {
-            currentDay.setDate(currentDay.getDate() + 1);
-            continue; // Skip non-workdays
-          }
-
-          const record = recordsMap.get(dayString);
-          switch (record?.status) {
-            case 'present':
-            case 'late':
-              stats.present += 1;
-              break;
-            case 'sick':
-              stats.sick += 1;
-              break;
-            case 'permission':
-              stats.permission += 1;
-              break;
-            case 'absent':
-              stats.absent += 1;
-              break;
-            default:
-              stats.absent += 1; // Count as absent if no record on a workday
-              break;
-          }
-          currentDay.setDate(currentDay.getDate() + 1);
+    const workDaysInMonth = new Set<string>();
+    let tempDate = new Date(startDate);
+    while(tempDate <= endDate) {
+        const dayString = format(tempDate, 'yyyy-MM-dd');
+        if(!recurringOffDays.has(tempDate.getDay()) && !holidays.has(dayString)) {
+            workDaysInMonth.add(dayString);
         }
-        newStats.set(user.uid, stats);
-      }));
+        tempDate.setDate(tempDate.getDate() + 1);
+    }
 
-      setAttendanceStats(newStats);
-      setIsLoading(false);
-    };
+    await Promise.all(users.map(async (user) => {
+      const attendanceRef = collection(firestore, `users/${user.uid}/attendanceRecords`);
+      const q = query(attendanceRef, where('checkInTime', '>=', startDate), where('checkInTime', '<', endDate));
+      const attendanceSnapshot = await getDocs(q);
 
-    calculateAllStats();
-  }, [users, selectedMonth, firestore, currentMonthlyConfig, schoolConfig]);
+      const userRecords = new Map(attendanceSnapshot.docs.map(doc => [format(doc.data().checkInTime.toDate(), 'yyyy-MM-dd'), doc.data()]));
+      
+      const stats: AttendanceStats = { present: 0, sick: 0, permission: 0, absent: 0 };
+      
+      workDaysInMonth.forEach(dayString => {
+        const record = userRecords.get(dayString);
+        switch (record?.status) {
+          case 'present':
+          case 'late':
+            stats.present++;
+            break;
+          case 'sick':
+            stats.sick++;
+            break;
+          case 'permission':
+            stats.permission++;
+            break;
+          default:
+            stats.absent++;
+            break;
+        }
+      });
+
+      newStats.set(user.uid, stats);
+    }));
+
+    setAttendanceStats(newStats);
+    setIsCalculatingStats(false);
+  }, [users, selectedMonth, firestore, schoolConfig, holidays]);
+
+  useEffect(() => {
+      calculateAllStats();
+  }, [calculateAllStats]);
+
 
   const filteredUsers = useMemo(() => {
     return users
@@ -149,10 +151,8 @@ export default function StafPage() {
       )
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   }, [users, roleFilter, debouncedSearchTerm]);
-
-  const effectiveWorkDays = currentMonthlyConfig?.workDays ?? 0;
   
-  const isPageLoading = isLoading || isAuthLoading || isMonthlyConfigLoading(monthId);
+  const isPageLoading = isLoading || isAuthLoading || isSettingsLoading;
 
   return (
     <div className="space-y-6">
@@ -182,14 +182,14 @@ export default function StafPage() {
           </SelectContent>
         </Select>
         <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-full md:w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full md:w-[200px]"><SelectValue /></SelectTrigger>
             <SelectContent>
                 {Array.from({ length: 12 }, (_, i) => {
                     const d = new Date();
                     d.setMonth(d.getMonth() - i);
                     return format(d, 'yyyy-MM');
                 }).map(month => (
-                    <SelectItem key={month} value={month}>{format(new Date(`${month}-02`), 'MMMM yyyy')}</SelectItem>
+                    <SelectItem key={month} value={month}>{format(new Date(`${month}-02`), 'MMMM yyyy', { locale: id })}</SelectItem>
                 ))}
             </SelectContent>
         </Select>
@@ -202,7 +202,7 @@ export default function StafPage() {
               <TableHead>No</TableHead>
               <TableHead>Nama</TableHead>
               <TableHead>NIP</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Peran</TableHead>
               <TableHead className="text-center">Hadir</TableHead>
               <TableHead className="text-center">Izin</TableHead>
               <TableHead className="text-center">Sakit</TableHead>
@@ -223,9 +223,8 @@ export default function StafPage() {
                     <TableCell>{index + 1}</TableCell>
                     <TableCell className="font-medium">{user.displayName}</TableCell>
                     <TableCell>{user.nip || '-'}</TableCell>
-                    <TableCell>{user.status || '-'}</TableCell>
+                    <TableCell>{user.role}</TableCell>
                     <TableCell className="text-center">{stats.present}</TableCell>
-                    {/* THE FIX: Ensure the correct data is in the correct column */}
                     <TableCell className="text-center">{stats.permission}</TableCell>
                     <TableCell className="text-center">{stats.sick}</TableCell>
                     <TableCell className="text-center">{stats.absent}</TableCell>
@@ -240,6 +239,9 @@ export default function StafPage() {
               })
             ) : (
               <TableRow><TableCell colSpan={10} className="h-24 text-center">Tidak ada data untuk ditampilkan.</TableCell></TableRow>
+            )}
+            {isCalculatingStats && !isPageLoading && (
+                 <TableRow><TableCell colSpan={10} className="h-24 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /> <span className='mt-2'>Menghitung rekapitulasi...</span></TableCell></TableRow>
             )}
           </TableBody>
         </Table>

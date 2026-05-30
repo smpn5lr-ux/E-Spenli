@@ -31,8 +31,9 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect, useMemo } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { PageWrapper } from '@/components/layout/page-wrapper';
+import { useSettings } from '@/contexts/SettingsContext'; // FINAL FIX: Import useSettings
 
-// --- Refactored: Centralized Leave Type Definitions ---
+// --- Centralized Leave Type Definitions ---
 const LEAVE_TYPES = {
   sick: 'Sakit',
   permission: 'Izin (Pribadi)',
@@ -42,7 +43,6 @@ const LEAVE_TYPES = {
   early_leave: 'Izin Pulang Cepat',
 } as const; 
 
-// FINAL FIX: Define keys as a non-empty array literal for Zod's enum.
 const leaveTypeKeys = [
   'sick',
   'permission',
@@ -54,9 +54,7 @@ const leaveTypeKeys = [
 
 
 const leaveRequestSchema = z.object({
-  leaveDate: z.enum(['today', 'tomorrow'], {
-    required_error: 'Tanggal pengajuan wajib dipilih.',
-  }),
+  leaveDate: z.string().nonempty('Tanggal pengajuan wajib dipilih.'),
   type: z.enum(leaveTypeKeys, {
     required_error: 'Jenis pengajuan wajib dipilih.',
   }),
@@ -69,7 +67,7 @@ export default function IzinPage() {
         resolver: zodResolver(leaveRequestSchema),
         defaultValues: {
             leaveDate: 'today',
-            type: undefined,
+            type: '' as any, 
             reason: '',
             proofUrl: '',
         }
@@ -81,31 +79,26 @@ export default function IzinPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [currentTime, setCurrentTime] = useState(new Date());
 
+    // FINAL FIX: Get settings from the reliable context
+    const { schoolConfig, holidays, isSettingsLoading } = useSettings();
+
     useEffect(() => {
         const timerId = setInterval(() => setCurrentTime(new Date()), 60000);
         return () => clearInterval(timerId);
     }, []);
 
-    const schoolConfigRef = useMemoFirebase(() => user ? doc(firestore, 'schoolConfig', 'default') : null, [firestore, user]);
-    const { data: schoolConfig, isLoading: isSchoolConfigLoading } = useDoc(user, schoolConfigRef);
-
-    const holidaysCollectionRef = useMemoFirebase(() => firestore ? collection(firestore, 'holidays') : null, [firestore]);
-    const { data: holidaysData, isLoading: isHolidaysLoading } = useCollection(user, holidaysCollectionRef);
-
-    const holidays = useMemo(() => {
-        if (!holidaysData) return [];
-        return holidaysData.map(h => h.id);
-    }, [holidaysData]);
-
+    // FINAL FIX: Date options are now derived from the SettingsContext, ensuring synchronization.
     const dateOptions = useMemo(() => {
         const now = new Date();
         
         const isHoliday = (date: Date) => {
-            const day = date.getDay();
-            if (day === 0 || day === 6) return true;
+            // 1. Check for recurring off-days (e.g., Sunday) from schoolConfig
+            const offDays = schoolConfig?.offDays ?? [];
+            if (offDays.includes(date.getDay())) return true;
 
+            // 2. Check for special holidays from the global 'holidays' Set
             const dateString = format(date, 'yyyy-MM-dd');
-            return holidays.includes(dateString);
+            return holidays.has(dateString);
         };
 
         const todayDate = now;
@@ -123,7 +116,7 @@ export default function IzinPage() {
                 isHoliday: isHoliday(tomorrowDate),
             },
         };
-    }, [holidays]);
+    }, [holidays, schoolConfig]);
 
     const selectedDateValue = form.watch('leaveDate');
     const selectedLeaveType = form.watch('type');
@@ -255,7 +248,7 @@ export default function IzinPage() {
             .finally(() => setIsSubmitting(false));
     }
 
-    const isChecking = isAttendanceLoading || isLeaveLoading || isSchoolConfigLoading || isHolidaysLoading;
+    const isChecking = isAttendanceLoading || isLeaveLoading || isSettingsLoading;
     const isTodayAndPastCheckout = selectedDateValue === 'today' && isPastCheckoutTime;
 
     const getSubmitButtonText = () => {
@@ -274,121 +267,127 @@ export default function IzinPage() {
                             <CardDescription>Isi formulir untuk mengajukan ketidakhadiran atau izin meninggalkan sekolah. Pengajuan akan ditinjau oleh Kepala Sekolah.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            {dateOptions.today.isHoliday && selectedDateValue === 'today' && (
-                                <Alert variant="default"> 
-                                    <Info className="h-4 w-4" />
-                                    <AlertTitle>Hari Ini Adalah Hari Libur</AlertTitle>
-                                    <AlertDescription>
-                                        Anda tidak dapat mengajukan izin karena hari ini adalah akhir pekan atau hari libur nasional.
-                                    </AlertDescription>
-                                </Alert>
-                            )}
-                            {isTodayAndPastCheckout && !hasCheckedIn && (
-                                <Alert variant="destructive">
-                                    <Info className="h-4 w-4" />
-                                    <AlertTitle>Waktu Pengajuan Izin Hari Ini Telah Berakhir</AlertTitle>
-                                    <AlertDescription>
-                                        Anda tidak dapat lagi mengajukan izin penuh waktu untuk hari ini karena telah melewati jam kerja. Silakan pilih "Besok".
-                                    </AlertDescription>
-                                </Alert>
-                            )}
-                            
-                            {selectedDateValue === 'today' && !dateOptions.today.isHoliday && (
-                                <Alert variant="default">
-                                    <Info className="h-4 w-4" />
-                                    <AlertTitle>Info Izin</AlertTitle>
-                                    <AlertDescription>
-                                        {hasCheckedIn 
-                                        ? 'Anda sudah absen masuk. Anda bisa mengajukan izin parsial (Dinas Siang/Pulang Cepat).' 
-                                        : 'Opsi izin parsial (Dinas Siang/Pulang Cepat) akan aktif setelah Anda absen masuk.'} 
-                                    </AlertDescription>
-                                </Alert>
-                            )}
+                            {isChecking ? (
+                                <div className="w-full flex items-center justify-center p-8 bg-muted rounded-md"><Loader2 className="h-6 w-6 animate-spin" /></div>
+                            ) : (
+                                <>
+                                    {dateOptions.today.isHoliday && selectedDateValue === 'today' && (
+                                        <Alert variant="default"> 
+                                            <Info className="h-4 w-4" />
+                                            <AlertTitle>Hari Ini Adalah Hari Libur</AlertTitle>
+                                            <AlertDescription>
+                                                Anda tidak dapat mengajukan izin karena hari ini adalah hari libur sesuai pengaturan.
+                                            </AlertDescription>
+                                        </Alert>
+                                    )}
+                                    {isTodayAndPastCheckout && !hasCheckedIn && (
+                                        <Alert variant="destructive">
+                                            <Info className="h-4 w-4" />
+                                            <AlertTitle>Waktu Pengajuan Izin Hari Ini Telah Berakhir</AlertTitle>
+                                            <AlertDescription>
+                                                Anda tidak dapat lagi mengajukan izin penuh waktu untuk hari ini karena telah melewati jam kerja. Silakan pilih "Besok".
+                                            </AlertDescription>
+                                        </Alert>
+                                    )}
+                                    
+                                    {selectedDateValue === 'today' && !dateOptions.today.isHoliday && (
+                                        <Alert variant="default">
+                                            <Info className="h-4 w-4" />
+                                            <AlertTitle>Info Izin</AlertTitle>
+                                            <AlertDescription>
+                                                {hasCheckedIn 
+                                                ? 'Anda sudah absen masuk. Anda bisa mengajukan izin parsial (Dinas Siang/Pulang Cepat).' 
+                                                : 'Opsi izin parsial (Dinas Siang/Pulang Cepat) akan aktif setelah Anda absen masuk.'} 
+                                            </AlertDescription>
+                                        </Alert>
+                                    )}
 
-                            <FormField
-                                control={form.control}
-                                name="leaveDate"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Pilih Tanggal Pengajuan</FormLabel>
-                                        <Select 
-                                            onValueChange={field.onChange} 
-                                            defaultValue={field.value} 
-                                            disabled={dateOptions.today.isHoliday && dateOptions.tomorrow.isHoliday}
-                                        >
-                                            <FormControl>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Pilih tanggal pengajuan" />
-                                                </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent>
-                                                <SelectItem value="today" disabled={dateOptions.today.isHoliday}>
-                                                    Hari Ini ({dateOptions.today.formatted}) {dateOptions.today.isHoliday && "(Hari Libur)"}
-                                                </SelectItem>
-                                                <SelectItem value="tomorrow" disabled={dateOptions.tomorrow.isHoliday}>
-                                                    Besok ({dateOptions.tomorrow.formatted}) {dateOptions.tomorrow.isHoliday && "(Hari Libur)"}
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                         {(dateOptions.today.isHoliday && dateOptions.tomorrow.isHoliday) && (
-                                            <p className="text-sm text-destructive mt-2">
-                                                Tidak ada tanggal yang dapat dipilih karena hari ini dan besok adalah hari libur.
-                                            </p>
+                                    <FormField
+                                        control={form.control}
+                                        name="leaveDate"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Pilih Tanggal Pengajuan</FormLabel>
+                                                <Select 
+                                                    onValueChange={field.onChange} 
+                                                    value={field.value}
+                                                    disabled={isSettingsLoading || (dateOptions.today.isHoliday && dateOptions.tomorrow.isHoliday)}
+                                                >
+                                                    <FormControl>
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Pilih tanggal pengajuan" />
+                                                        </SelectTrigger>
+                                                    </FormControl>
+                                                    <SelectContent>
+                                                        <SelectItem value="today" disabled={dateOptions.today.isHoliday}>
+                                                            Hari Ini ({dateOptions.today.formatted}) {dateOptions.today.isHoliday && "(Hari Libur)"}
+                                                        </SelectItem>
+                                                        <SelectItem value="tomorrow" disabled={dateOptions.tomorrow.isHoliday}>
+                                                            Besok ({dateOptions.tomorrow.formatted}) {dateOptions.tomorrow.isHoliday && "(Hari Libur)"}
+                                                        </SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                 {(dateOptions.today.isHoliday && dateOptions.tomorrow.isHoliday) && (
+                                                    <p className="text-sm text-destructive mt-2">
+                                                        Tidak ada tanggal yang dapat dipilih karena hari ini dan besok adalah hari libur.
+                                                    </p>
+                                                )}
+                                                <FormMessage />
+                                            </FormItem>
                                         )}
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                            <FormField
-                                control={form.control}
-                                name="type"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Jenis Pengajuan</FormLabel>
-                                        <Select onValueChange={field.onChange} value={field.value}>
-                                            <FormControl>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Pilih jenis pengajuan" />
-                                                </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent>
-                                                {availableLeaveTypes.map(type => (
-                                                    <SelectItem key={type.value} value={type.value} disabled={type.disabled}>
-                                                        {type.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                            <FormField
-                                control={form.control}
-                                name="reason"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Alasan</FormLabel>
-                                        <FormControl>
-                                            <Textarea placeholder="Jelaskan alasan Anda..." {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                            <FormField
-                                control={form.control}
-                                name="proofUrl"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Link Bukti (Opsional)</FormLabel>
-                                        <FormControl>
-                                            <Input placeholder="https://... (contoh: link surat dokter)" {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="type"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Jenis Pengajuan</FormLabel>
+                                                <Select onValueChange={field.onChange} value={field.value}>
+                                                    <FormControl>
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Pilih jenis pengajuan" />
+                                                        </SelectTrigger>
+                                                    </FormControl>
+                                                    <SelectContent>
+                                                        {availableLeaveTypes.map(type => (
+                                                            <SelectItem key={type.value} value={type.value} disabled={type.disabled}>
+                                                                {type.label}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="reason"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Alasan</FormLabel>
+                                                <FormControl>
+                                                    <Textarea placeholder="Jelaskan alasan Anda..." {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                    <FormField
+                                        control={form.control}
+                                        name="proofUrl"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Link Bukti (Opsional)</FormLabel>
+                                                <FormControl>
+                                                    <Input placeholder="https://... (contoh: link surat dokter)" {...field} />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                </>
+                            )}
                         </CardContent>
                         <CardFooter className="border-t pt-6">
                             <Button type="submit" disabled={isSubmitting || isChecking || (selectedDateValue === 'today' && dateOptions.today.isHoliday) || (selectedDateValue === 'tomorrow' && dateOptions.tomorrow.isHoliday)}>

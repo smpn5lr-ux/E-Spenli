@@ -2,9 +2,9 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useUser, useFirestore } from '@/firebase'; // Removed unused imports
 import { collection, getDocs, query, where, doc } from 'firebase/firestore';
-import { format, isValid, parseISO, startOfMonth, endOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns';
+import { format, isValid, parseISO, startOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Download, AlertCircle, FileText, FileSpreadsheet, RefreshCw, Loader2, Edit, Eye } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -25,22 +25,16 @@ import * as XLSX from 'xlsx';
 import type { jsPDF } from "jspdf";
 import { calculateAttendanceStats, fetchUserMonthlyReportData } from '@/lib/attendance';
 import { PageWrapper } from '@/components/layout/page-wrapper';
+import { useSettings } from '@/contexts/SettingsContext'; // FINAL FIX: Import useSettings
 
 interface ReportRowData {
-    no: number;
-    uid: string;
-    name: string;
-    nip: string;
-    position: string;
-    role: string;
-    totalHadir: number;
-    totalIzin: number;
-    totalSakit: number;
-    totalAlpa: number;
-    persentase: string;
+    no: number; uid: string; name: string; nip: string;
+    position: string; role: string; totalHadir: number; totalIzin: number;
+    totalSakit: number; totalAlpa: number; persentase: string;
     sequenceNumber: number | null;
 }
 
+// --- Helper Functions (moved to top for clarity) ---
 const safeFormat = (dateInput: string | Date | null | undefined, formatString: string, options: any = {}) => {
     if (!dateInput) return '-';
     const date = typeof dateInput === 'string' ? parseISO(dateInput) : dateInput;
@@ -50,13 +44,11 @@ const safeFormat = (dateInput: string | Date | null | undefined, formatString: s
 const addReportHeader = (doc: jsPDF) => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const center = pageWidth / 2;
-    doc.setFont('times', 'bold');
-    doc.setFontSize(14);
+    doc.setFont('times', 'bold'); doc.setFontSize(14);
     doc.text('PEMERINTAH KABUPATEN MANGGARAI', center, 15, { align: 'center' });
     doc.text('DINAS PENDIDIKAN PEMUDA DAN OLAHRAGA', center, 21, { align: 'center' });
     doc.text('SMP NEGERI 5 LANGKE REMBONG', center, 27, { align: 'center' });
-    doc.setFont('times', 'normal');
-    doc.setFontSize(9);
+    doc.setFont('times', 'normal'); doc.setFontSize(9);
     doc.text('Alamat: Mando, Kelurahan compang carep, Kecamatan Langke Rembong', center, 33, { align: 'center' });
     doc.setLineWidth(0.5);
     doc.line(14, 37, pageWidth - 14, 37);
@@ -66,44 +58,39 @@ const addReportHeader = (doc: jsPDF) => {
 const addSignatureBlock = (doc: jsPDF, startY: number, principal: ReportRowData | undefined) => {
     const pageHeight = doc.internal.pageSize.getHeight();
     const pageWidth = doc.internal.pageSize.getWidth();
-    const signatureHeight = 45; 
-    let effectiveY = startY;
-
-    if (startY + signatureHeight > pageHeight - 25) {
-        doc.addPage();
-        effectiveY = 20; 
-    }
-
+    if (startY + 45 > pageHeight - 25) { doc.addPage(); startY = 20; }
     const signatureX = pageWidth - 84;
     doc.setFontSize(10);
-    doc.text(`Mando, ${format(new Date(), 'd MMMM yyyy', { locale: id })}`, signatureX, effectiveY + 5);
-    doc.text('Mengetahui,', signatureX, effectiveY + 11);
-    doc.text('Kepala Sekolah', signatureX, effectiveY + 17);
-    doc.text(principal ? principal.name : '(...................................)', signatureX, effectiveY + 37);
-    if (principal?.nip) {
-        doc.text(`NIP. ${principal.nip}`, signatureX, effectiveY + 43);
-    }
+    doc.text(`Mando, ${format(new Date(), 'd MMMM yyyy', { locale: id })}`, signatureX, startY + 5);
+    doc.text('Mengetahui,', signatureX, startY + 11);
+    doc.text('Kepala Sekolah', signatureX, startY + 17);
+    doc.text(principal ? principal.name : '(...................................)', signatureX, startY + 37);
+    if (principal?.nip) { doc.text(`NIP. ${principal.nip}`, signatureX, startY + 43); }
 };
 
 const addFooter = (doc: jsPDF) => {
     const pageCount = (doc as any).internal.getNumberOfPages();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-
     for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(8);
         doc.setFont('times', 'italic');
-        doc.text("Dokumen absensi ini adalah dokumen resmi yang dibuat secara otomatis oleh aplikasi.", 14, pageHeight - 10, { align: 'left' });
+        doc.text("Dokumen absensi ini adalah dokumen resmi oleh aplikasi.", 14, doc.internal.pageSize.getHeight() - 10);
         doc.setFont('times', 'normal');
-        doc.text(`Halaman ${i} dari ${pageCount}`, pageWidth - 14, pageHeight - 10, { align: 'right' });
+        doc.text(`Halaman ${i} dari ${pageCount}`, doc.internal.pageSize.getWidth() - 14, doc.internal.pageSize.getHeight() - 10, { align: 'right' });
     }
 };
 
+// =======================================================================================
+// Main Component: SchoolReportPage
+// =======================================================================================
 export default function SchoolReportPage() {
     const { user, isUserLoading } = useUser();
     const firestore = useFirestore();
-    const [currentMonth, setCurrentMonth] = useState(new Date());
+    
+    // FINAL FIX: Get settings from the single source of truth.
+    const { schoolConfig, holidays, isSettingsLoading } = useSettings();
+
+    const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
     const [reportData, setReportData] = useState<ReportRowData[]>([]);
     const [isReportLoading, setIsReportLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -113,14 +100,13 @@ export default function SchoolReportPage() {
     const [editingUser, setEditingUser] = useState<ReportRowData | null>(null);
     const [refetchIndex, setRefetchIndex] = useState(0);
 
-    const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
-    const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc(user, schoolConfigRef);
-
-    const monthlyConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'monthlyConfigs', format(currentMonth, 'yyyy-MM')) : null, [firestore, currentMonth]);
-    const { data: monthlyConfigData, isLoading: isMonthlyConfigLoading } = useDoc(user, monthlyConfigRef);
-
+    // FINAL FIX: This is the core logic update. The useEffect now depends on the new context data.
     useEffect(() => {
-        if (isUserLoading || !user || !firestore || isConfigLoading || isMonthlyConfigLoading) return;
+        // Guard clause: Don't run until all necessary data is loaded.
+        if (isUserLoading || !user || !firestore || isSettingsLoading || !schoolConfig) {
+            setIsReportLoading(false);
+            return;
+        }
         
         let isMounted = true;
         const loadData = async () => {
@@ -137,9 +123,8 @@ export default function SchoolReportPage() {
 
                 const reportPromises = usersSnapshot.docs.map(async (userDoc) => {
                     const userData = userDoc.data();
-                    // *** FINAL VERCEL BUILD FIX ***
-                    // The function now fetches its own config, so we must not pass it.
-                    const stats = await calculateAttendanceStats(firestore, userDoc.id, currentMonth);
+                    // Pass the correct arguments to the updated function.
+                    const stats = await calculateAttendanceStats(firestore, userDoc.id, currentMonth, schoolConfig, holidays);
                     
                     return {
                         uid: userDoc.id,
@@ -162,9 +147,8 @@ export default function SchoolReportPage() {
                     .map(res => res.value);
                 
                 successfulResults.sort((a, b) => {
-                    const seqA = a.sequenceNumber;
-                    const seqB = b.sequenceNumber;
-                    if (seqA != null && seqB != null) return seqA < seqB ? -1 : 1;
+                    const seqA = a.sequenceNumber; const seqB = b.sequenceNumber;
+                    if (seqA != null && seqB != null) return seqA - seqB;
                     if (seqA != null) return -1;
                     if (seqB != null) return 1;
                     return a.name.localeCompare(b.name);
@@ -184,7 +168,7 @@ export default function SchoolReportPage() {
         loadData();
         
         return () => { isMounted = false; };
-    }, [user, isUserLoading, firestore, currentMonth, refetchIndex, schoolConfigData, isConfigLoading, monthlyConfigData, isMonthlyConfigLoading]);
+    }, [user, isUserLoading, firestore, currentMonth, refetchIndex, schoolConfig, holidays, isSettingsLoading]); // Updated dependency array
     
     const monthName = format(currentMonth, 'MMMM yyyy', { locale: id });
     const principal = useMemo(() => reportData.find(u => u.role === 'kepala_sekolah'), [reportData]);
@@ -193,46 +177,22 @@ export default function SchoolReportPage() {
     const handleDownloadExcel = () => {
         if (!filteredReports.length) return;
         const kopSurat = [
-            ['PEMERINTAH KABUPATEN MANGGARAI'],
-            ['DINAS PENDIDIKAN PEMUDA DAN OLAHRAGA'],
-            ['SMP NEGERI 5 LANGKE REMBONG'],
-            ['Alamat: Mando, Kelurahan compang carep, Kecamatan Langke Rembong'],
-            [],
-            ['LAPORAN KEHADIRAN'],
-            [`Periode: ${monthName}`],
-            []
+            ['PEMERINTAH KABUPATEN MANGGARAI'], ['DINAS PENDIDIKAN PEMUDA DAN OLAHRAGA'],
+            ['SMP NEGERI 5 LANGKE REMBONG'], ['Alamat: Mando, Kelurahan compang carep, Kecamatan Langke Rembong'],
+            [], ['LAPORAN KEHADIRAN'], [`Periode: ${monthName}`], []
         ];
         const tableHeaders = ['No', 'Nama', 'NIP', 'Status', 'Hadir', 'Izin', 'Sakit', 'Alpa', 'Persen'];
-        const tableBody = filteredReports.map(item => [
-            item.no,
-            item.name,
-            item.nip,
-            item.position,
-            item.totalHadir,
-            item.totalIzin,
-            item.totalSakit,
-            item.totalAlpa,
-            item.persentase
-        ]);
-
+        const tableBody = filteredReports.map(item => [item.no, item.name, item.nip, item.position, item.totalHadir, item.totalIzin, item.totalSakit, item.totalAlpa, item.persentase]);
         const signature = [
             [], [],
-            [null, null, null, null, null, null, null, `Mando, ${format(new Date(), 'd MMMM yyyy', { locale: id })}`],
-            [null, null, null, null, null, null, null, 'Mengetahui,'],
-            [null, null, null, null, null, null, null, 'Kepala Sekolah'],
-            [], [],
-            [null, null, null, null, null, null, null, principal ? principal.name : '(...................................)'],
-            [null, null, null, null, null, null, null, principal?.nip ? `NIP. ${principal.nip}` : '']
+            Array(8).fill(null).concat([`Mando, ${format(new Date(), 'd MMMM yyyy', { locale: id })}`]),
+            Array(8).fill(null).concat(['Mengetahui,']), Array(8).fill(null).concat(['Kepala Sekolah']), [], [],
+            Array(8).fill(null).concat([principal ? principal.name : '(...................................)']),
+            Array(8).fill(null).concat([principal?.nip ? `NIP. ${principal.nip}` : ''])
         ];
-        
         const finalData = [...kopSurat, tableHeaders, ...tableBody, ...signature];
         const worksheet = XLSX.utils.aoa_to_sheet(finalData);
-        
-        worksheet['!cols'] = [
-            { wch: 4 }, { wch: 35 }, { wch: 22 }, { wch: 12 }, 
-            { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }
-        ];
-
+        worksheet['!cols'] = [{ wch: 4 }, { wch: 35 }, { wch: 22 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }];
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Ringkasan Kehadiran");
         XLSX.writeFile(workbook, `Laporan Kehadiran Bulan ${monthName}.xlsx`);
@@ -243,110 +203,63 @@ export default function SchoolReportPage() {
         const { jsPDF } = await import('jspdf');
         const autoTable = (await import('jspdf-autotable')).default;
         const doc = new jsPDF();
-        
         let startY = addReportHeader(doc);
-        const pageWidth = doc.internal.pageSize.getWidth();
-        doc.setFont('times', 'bold');
-        doc.setFontSize(12);
-        doc.text('LAPORAN KEHADIRAN', pageWidth / 2, startY, { align: 'center' });
+        doc.setFont('times', 'bold'); doc.setFontSize(12);
+        doc.text('LAPORAN KEHADIRAN', doc.internal.pageSize.getWidth() / 2, startY, { align: 'center' });
         startY += 6;
         doc.setFont('times', 'normal');
-        doc.text(`Periode: ${monthName}`, pageWidth / 2, startY, { align: 'center' });
+        doc.text(`Periode: ${monthName}`, doc.internal.pageSize.getWidth() / 2, startY, { align: 'center' });
         startY += 12;
-
         autoTable(doc, {
-            startY,
-            head: [['No', 'Nama', 'NIP', 'Status', 'Hadir', 'Izin', 'Sakit', 'Alpa', 'Persen']],
-            body: filteredReports.map(item => [
-                item.no, item.name, item.nip, item.position,
-                item.totalHadir,
-                item.totalIzin,
-                item.totalSakit,
-                item.totalAlpa, 
-                item.persentase,
-            ]),
-            theme: 'grid',
-            styles: { fontSize: 9.3, font: 'times', cellPadding: 2 }, 
+            startY, head: [['No', 'Nama', 'NIP', 'Status', 'Hadir', 'Izin', 'Sakit', 'Alpa', 'Persen']],
+            body: filteredReports.map(item => [item.no, item.name, item.nip, item.position, item.totalHadir, item.totalIzin, item.totalSakit, item.totalAlpa, item.persentase]),
+            theme: 'grid', styles: { fontSize: 9.3, font: 'times', cellPadding: 2 },
             headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold', fontSize: 9.3 },
-            columnStyles: { 
-                0: { cellWidth: 8, halign: 'center' }, 1: { cellWidth: 52 }, 2: { cellWidth: 37 },
-                3: { cellWidth: 18 }, 4: { cellWidth: 13, halign: 'center' }, 5: { cellWidth: 13, halign: 'center' },
-                6: { cellWidth: 13, halign: 'center' }, 7: { cellWidth: 13, halign: 'center' }, 8: { cellWidth: 15, halign: 'center' },
-            },
+            columnStyles: { 0: { cellWidth: 8, halign: 'center' }, 1: { cellWidth: 52 }, 2: { cellWidth: 37 }, 3: { cellWidth: 18 }, 4: { cellWidth: 13, halign: 'center' }, 5: { cellWidth: 13, halign: 'center' }, 6: { cellWidth: 13, halign: 'center' }, 7: { cellWidth: 13, halign: 'center' }, 8: { cellWidth: 15, halign: 'center' } },
         });
-
-        const finalY = (doc as any).lastAutoTable.finalY;
-        addSignatureBlock(doc, finalY + 10, principal);
-        
+        addSignatureBlock(doc, (doc as any).lastAutoTable.finalY + 10, principal);
         addFooter(doc);
-        
         doc.save(`Laporan Kehadiran Bulan ${monthName}.pdf`);
     };
 
     const handleDownloadUserPdf = async (targetUser: ReportRowData) => {
-        if (!firestore || !schoolConfigData) return;
+        if (!firestore || !schoolConfig) return;
         const { jsPDF } = await import('jspdf');
         const autoTable = (await import('jspdf-autotable')).default;
         const doc = new jsPDF();
-        
         try {
-            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, monthlyConfigData);
-            
+            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfig, holidays);
             let startY = addReportHeader(doc);
-            const pageWidth = doc.internal.pageSize.getWidth();
-            doc.setFont('times', 'bold');
-            doc.setFontSize(12);
-            doc.text('LAPORAN KEHADIRAN', pageWidth / 2, startY, { align: 'center' });
-            startY += 6;
-            doc.setFont('times', 'normal');
-            doc.text(`Periode: ${monthName}`, pageWidth / 2, startY, { align: 'center' });
-            startY += 12;
-            doc.setFontSize(10);
+            doc.setFont('times', 'bold'); doc.setFontSize(12);
+            doc.text('LAPORAN KEHADIRAN', doc.internal.pageSize.getWidth() / 2, startY, { align: 'center' });
+            startY += 6; doc.setFont('times', 'normal');
+            doc.text(`Periode: ${monthName}`, doc.internal.pageSize.getWidth() / 2, startY, { align: 'center' });
+            startY += 12; doc.setFontSize(10);
             doc.text('Nama', 14, startY); doc.text(`: ${targetUser.name}`, 55, startY);
             doc.text('NIP', 14, startY + 6); doc.text(`: ${targetUser.nip || '-'}`, 55, startY + 6);
             doc.text('Status Kepegawaian', 14, startY + 12); doc.text(`: ${targetUser.position || '-'}`, 55, startY + 12);
             startY += 20;
-
             autoTable(doc, {
-                startY,
-                head: [['No', 'Tanggal', 'Jam Masuk', 'Jam Pulang', 'Status', 'Keterangan']],
-                body: reportDetails.map((d, i) => [
-                    i + 1, safeFormat(d.date, 'E, dd/MM/yy', { locale: id }),
-                    safeFormat(d.checkInTime, 'HH:mm'), safeFormat(d.checkOutTime, 'HH:mm'),
-                    d.status, d.keterangan || '-'
-                ]),
-                theme: 'grid',
-                styles: { fontSize: 9.5, font: 'times', cellPadding: 2 },
-                headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold', fontSize: 9.5, font: 'times' },
+                startY, head: [['No', 'Tanggal', 'Jam Masuk', 'Jam Pulang', 'Status', 'Keterangan']],
+                body: reportDetails.map((d, i) => [i + 1, safeFormat(d.date, 'E, dd/MM/yy', { locale: id }), safeFormat(d.checkInTime, 'HH:mm'), safeFormat(d.checkOutTime, 'HH:mm'), d.status, d.keterangan || '-']),
+                theme: 'grid', styles: { fontSize: 9.5, font: 'times', cellPadding: 2 },
+                headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold', fontSize: 9.5 },
             });
-
-            const finalY = (doc as any).lastAutoTable.finalY;
-            addSignatureBlock(doc, finalY + 10, principal);
-
+            addSignatureBlock(doc, (doc as any).lastAutoTable.finalY + 10, principal);
             addFooter(doc);
-            
             doc.save(`Laporan Kehadiran ${targetUser.name} - ${monthName}.pdf`);
         } catch (e) { console.error("Failed to generate user PDF:", e); }
     };
-    
+
     const handleDownloadUserExcel = async (targetUser: ReportRowData) => {
-        if (!firestore || !schoolConfigData) return;
+        if (!firestore || !schoolConfig) return;
         try {
-            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfigData, monthlyConfigData);
+            const reportDetails = await fetchUserMonthlyReportData(firestore, targetUser.uid, currentMonth, schoolConfig, holidays);
             const kopSurat = [['PEMERINTAH KABUPATEN MANGGARAI'], ['DINAS PENDIDIKAN PEMUDA DAN OLAHRAGA'], ['SMP NEGERI 5 LANGKE REMBONG'], ['Alamat: Mando, Kelurahan compang carep, Kecamatan Langke Rembong'], [], ['LAPORAN KEHADIRAN'], [`Periode: ${monthName}`], []];
             const userInfo = [['Nama', `: ${targetUser.name}`], ['NIP', `: ${targetUser.nip || '-'}`], ['Status Kepegawaian', `: ${targetUser.position || '-'}`], []];
             const tableHeaders = ['No', 'Tanggal', 'Jam Masuk', 'Jam Pulang', 'Status', 'Keterangan'];
-            
-            const tableBody = reportDetails.map((d, i) => [
-                i + 1,
-                safeFormat(d.date, 'E, dd/MM/yy', { locale: id }),
-                safeFormat(d.checkInTime, 'HH:mm'),
-                safeFormat(d.checkOutTime, 'HH:mm'),
-                d.status,
-                d.keterangan || '-'
-            ]);
-
-            const signature = [[], [], [null, null, null, null, `Mando, ${format(new Date(), 'd MMMM yyyy', { locale: id })}`], [null, null, null, null, 'Mengetahui,'], [null, null, null, null, 'Kepala Sekolah'], [], [], [null, null, null, null, principal ? principal.name : '(...................................)'], [null, null, null, null, principal?.nip ? `NIP. ${principal.nip}` : '']];
+            const tableBody = reportDetails.map((d, i) => [i + 1, safeFormat(d.date, 'E, dd/MM/yy', { locale: id }), safeFormat(d.checkInTime, 'HH:mm'), safeFormat(d.checkOutTime, 'HH:mm'), d.status, d.keterangan || '-']);
+            const signature = [[], [], Array(4).fill(null).concat([`Mando, ${format(new Date(), 'd MMMM yyyy', { locale: id })}`]), Array(4).fill(null).concat(['Mengetahui,']), Array(4).fill(null).concat(['Kepala Sekolah']), [], [], Array(4).fill(null).concat([principal ? principal.name : '(...................................)']), Array(4).fill(null).concat([principal?.nip ? `NIP. ${principal.nip}` : ''])];
             const finalData = [...kopSurat, ...userInfo, tableHeaders, ...tableBody, ...signature];
             const worksheet = XLSX.utils.aoa_to_sheet(finalData);
             const workbook = XLSX.utils.book_new();
@@ -355,23 +268,14 @@ export default function SchoolReportPage() {
         } catch (e) { console.error("Failed to generate user Excel:", e); }
     };
 
-    const changeMonth = (amount: number) => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + amount, 1));
+    const handleEditClick = (userToEdit: ReportRowData) => { setEditingUser(userToEdit); setIsEditModalOpen(true); };
+    const handleCloseModal = () => { setIsEditModalOpen(false); setEditingUser(null); setRefetchIndex(prev => prev + 1); };
     
-    const handleEditClick = (userToEdit: ReportRowData) => { 
-        setEditingUser(userToEdit); 
-        setIsEditModalOpen(true); 
-    };
-    const handleCloseModal = () => { 
-        setIsEditModalOpen(false); 
-        setEditingUser(null); 
-        setRefetchIndex(prev => prev + 1);
-    };
-    
-    const isLoading = isReportLoading || isUserLoading || isConfigLoading || isMonthlyConfigLoading;
+    const isLoading = isReportLoading || isUserLoading || isSettingsLoading;
 
     if (isUserLoading) return <PageWrapper><div className="p-6"><Skeleton className="h-40 w-full" /></div></PageWrapper>;
-    if (!user) return null;
-    if (!['admin', 'kepala_sekolah'].includes(user.role)) return <PageWrapper><div className="p-4"><Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Akses Ditolak</AlertTitle><AlertDescription>Anda tidak memiliki izin untuk mengakses halaman ini.</AlertDescription></Alert></div></PageWrapper>;
+    if (!user || !schoolConfig) return null; // Simplified guard
+    if (!['admin', 'kepala_sekolah'].includes(user.role)) return <PageWrapper><div className="p-4"><Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Akses Ditolak</AlertTitle><AlertDescription>Anda tidak memiliki izin.</AlertDescription></Alert></div></PageWrapper>;
 
     return (
         <PageWrapper>
@@ -382,8 +286,8 @@ export default function SchoolReportPage() {
                     isOpen={isEditModalOpen} 
                     onClose={handleCloseModal} 
                     currentUser={user}
-                    schoolConfig={schoolConfigData}
-                    monthlyConfig={monthlyConfigData}
+                    schoolConfig={schoolConfig} // Pass the loaded schoolConfig
+                    holidays={holidays} // Pass the loaded holidays
                 />
             )}
             
@@ -417,8 +321,8 @@ export default function SchoolReportPage() {
                     </Button>
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                    <Select value={roleFilter} onValueChange={setRoleFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter berdasarkan peran" /></SelectTrigger><SelectContent><SelectItem value="all">Semua Peran</SelectItem><SelectItem value="guru">Guru</SelectItem><SelectItem value="pegawai">Pegawai</SelectItem><SelectItem value="kepala_sekolah">Kepala Sekolah</SelectItem></SelectContent></Select>
-                    <Input type="search" placeholder="Cari berdasarkan nama..." className="w-full sm:w-[250px]" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                    <Select value={roleFilter} onValueChange={setRoleFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter" /></SelectTrigger><SelectContent><SelectItem value="all">Semua Peran</SelectItem><SelectItem value="guru">Guru</SelectItem><SelectItem value="pegawai">Pegawai</SelectItem><SelectItem value="kepala_sekolah">Kepala Sekolah</SelectItem></SelectContent></Select>
+                    <Input type="search" placeholder="Cari nama..." className="w-full sm:w-[250px]" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 </div>
             </div>
 
@@ -434,18 +338,14 @@ export default function SchoolReportPage() {
                                         <TableHead className="w-[50px] text-white">No</TableHead>
                                         <TableHead className="text-white">Nama</TableHead>
                                         <TableHead className="text-white">NIP</TableHead>
-                                        <TableHead className="text-white">Status Kepegawaian</TableHead>
+                                        <TableHead className="text-white">Status</TableHead>
                                         <TableHead className="text-center text-white">Hadir</TableHead>
                                         <TableHead className="text-center text-white">Izin</TableHead>
                                         <TableHead className="text-center text-white">Sakit</TableHead>
                                         <TableHead className="text-center text-white">Alpa</TableHead>
-                                        <TableHead className="text-center text-white">Persentase</TableHead>
-                                        {user.role === 'admin' && (
-                                            <>
-                                                <TableHead className="w-[50px] text-center text-white">Opsi</TableHead>
-                                                <TableHead className="w-[50px] text-center text-white">Aksi</TableHead>
-                                            </>
-                                        )}
+                                        <TableHead className="text-center text-white">Persen</TableHead>
+                                        {user.role === 'admin' && <TableHead className="w-[50px] text-center text-white">Opsi</TableHead>}
+                                        {user.role === 'admin' && <TableHead className="w-[50px] text-center text-white">Aksi</TableHead>}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -484,7 +384,7 @@ export default function SchoolReportPage() {
                                             )}
                                         </TableRow>
                                     )) : (
-                                        <TableRow><TableCell colSpan={user.role === 'admin' ? 11 : 9} className="h-24 text-center">{error ? 'Gagal memuat data.' : 'Tidak ada data untuk ditampilkan.'}</TableCell></TableRow>
+                                        <TableRow><TableCell colSpan={user.role === 'admin' ? 11 : 9} className="h-24 text-center">{error ? 'Gagal memuat data.' : 'Tidak ada data.'}</TableCell></TableRow>
                                     )}
                                 </TableBody>
                             </Table>
