@@ -15,22 +15,17 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Download, Loader2, RefreshCw, LocateFixed, ChevronLeft, ChevronRight, HelpCircle } from 'lucide-react';
+import { Download, Loader2, RefreshCw, LocateFixed, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useDoc, useMemoFirebase, useUser, setDocumentNonBlocking } from '@/firebase';
-import { doc, writeBatch, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, writeBatch, setDoc, deleteDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { Checkbox } from '@/components/ui/checkbox';
-import { format, eachDayOfInterval, startOfMonth } from 'date-fns';
+import { format, eachDayOfInterval, startOfMonth, addMonths, subMonths } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useSettings } from '@/contexts/SettingsContext';
 import { DEFAULT_WEIGHTS } from '@/lib/attendance';
 
@@ -40,149 +35,125 @@ const daysOfWeek = [
     { value: 3, label: 'Rabu' }, { value: 4, label: 'Kamis' }, { value: 5, label: 'Jumat' }, { value: 6, label: 'Sabtu' },
 ];
 
-const statusKeyToLabelMap: { [key: string]: string } = {
-    present: 'Hadir Penuh (Masuk & Pulang)',
-    late: 'Terlambat',
-    absent: 'Alpa',
-    sick: 'Sakit',
-    permission: 'Izin (Izin Pribadi)',
-    official_duty: 'Izin Dinas',
-    no_check_in: 'Hanya Absen Pulang (Tanpa Masuk)',
-    no_check_out: 'Hanya Absen Masuk (Tanpa Pulang)',
-    early_leave: 'Izin Pulang Cepat', // Added for consistency
-};
-
 // =======================================================================================
-// REFACTORED: The Monthly Calendar Component (Now a "Dumb" Component)
-// It relies entirely on SettingsContext for its data and logic.
+// FINAL REWRITE: The Calendar now uses the reliable `useSettings` context for its display
+// while still writing directly to Firestore. This creates a closed loop.
+// 1. Action: User clicks checkbox -> `handleDayToggle` writes to Firestore.
+// 2. Reaction: Firestore updates -> `SettingsContext` gets the update in real-time.
+// 3. Display: `useSettings` provides the updated holiday Set -> Calendar re-renders instantly.
 // =======================================================================================
-function MonthlyConfigCalendar() {
+function SyncedMonthlyCalendar() {
   const { toast } = useToast();
-  const {
-    schoolConfig,
-    monthlyConfigs,
-    subscribeToMonth,
-    updateHolidaysForMonth,
-    isMonthlyConfigLoading
-  } = useSettings();
+  const firestore = useFirestore();
+
+  // GET DATA FROM THE CONTEXT (Single Source of Truth)
+  const { schoolConfig, holidays, isSettingsLoading } = useSettings();
 
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(new Date()));
-  const [isSaving, setIsSaving] = useState(false);
-
-  const monthlyConfigId = useMemo(() => format(currentMonth, 'yyyy-MM'), [currentMonth]);
-  const currentMonthData = monthlyConfigs[monthlyConfigId];
-  const holidays = useMemo(() => new Set(currentMonthData?.holidays ?? []), [currentMonthData]);
-
-  // EFFECT: Subscribe to the current month's data when the component mounts or month changes.
-  useEffect(() => {
-    subscribeToMonth(monthlyConfigId);
-  }, [monthlyConfigId, subscribeToMonth]);
+  const [isSaving, setIsSaving] = useState(false); // For disabling buttons during an operation
 
   const allDaysInMonth = useMemo(() => eachDayOfInterval({ 
       start: startOfMonth(currentMonth), 
       end: new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0) 
   }), [currentMonth]);
 
-  const calculatedWorkDays = useMemo(() => {
-    if (!schoolConfig) return 0;
-    const recurringOffDays: number[] = schoolConfig.offDays ?? [0, 6];
-    return allDaysInMonth.filter(day => 
-        !recurringOffDays.includes(day.getDay()) && !holidays.has(format(day, 'yyyy-MM-dd'))
-    ).length;
-  }, [allDaysInMonth, holidays, schoolConfig]);
-
+  // The core logic for handling a day toggle.
   const handleDayToggle = async (day: Date, checked: boolean) => {
+    if (!firestore) return;
+    
     setIsSaving(true);
     const dayString = format(day, 'yyyy-MM-dd');
-    const newHolidays = new Set(holidays);
-
-    if (checked) {
-      newHolidays.add(dayString);
-    } else {
-      newHolidays.delete(dayString);
-    }
-
-    const recurringOffDays: number[] = schoolConfig?.offDays ?? [0, 6];
-    const newWorkDays = allDaysInMonth.filter(d => 
-        !recurringOffDays.includes(d.getDay()) && !newHolidays.has(format(d, 'yyyy-MM-dd'))
-    ).length;
+    const holidayDocRef = doc(firestore, 'holidays', dayString);
 
     try {
-      // Instead of writing to DB directly, we now call the context's update function.
-      await updateHolidaysForMonth(monthlyConfigId, Array.from(newHolidays), newWorkDays);
-      toast({ title: "Libur Diperbarui", description: `Perubahan untuk ${format(day, 'd MMMM')} disimpan.` });
-    } catch (error) { 
-      console.error("Failed to update holiday via context:", error);
-      toast({ variant: "destructive", title: "Gagal Menyimpan", description: "Gagal memperbarui hari libur, silakan coba lagi." });
+      if (checked) {
+        // If checked, CREATE a document in the 'holidays' collection.
+        await setDoc(holidayDocRef, { createdAt: serverTimestamp() });
+        toast({ title: "Hari Libur Ditetapkan", description: `${format(day, 'd MMMM')} telah ditandai sebagai hari libur.` });
+      } else {
+        // If unchecked, DELETE the document.
+        await deleteDoc(holidayDocRef);
+        toast({ title: "Hari Kerja Ditetapkan", description: `${format(day, 'd MMMM')} kini menjadi hari kerja.` });
+      }
+    } catch (error) {
+      console.error("Failed to update holiday:", error);
+      toast({ variant: "destructive", title: "Gagal Menyimpan", description: "Terjadi kesalahan. Periksa koneksi Anda dan coba lagi." });
     } finally {
       setIsSaving(false);
     }
   };
   
-  const isLoading = isMonthlyConfigLoading(monthlyConfigId) || !schoolConfig;
-
-  // --- UI RENDER ---
   return (
     <Card>
         <CardHeader>
             <CardTitle>Pengaturan Hari Libur Bulanan</CardTitle>
-            <CardDescription>Tandai hari libur spesifik. Perubahan akan disimpan secara otomatis & instan.</CardDescription>
+            <CardDescription>Tandai hari libur spesifik. Perubahan akan disimpan dan disinkronkan ke seluruh sistem secara instan.</CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2 space-y-4">
-                {isLoading && !currentMonthData ? <div className="w-full h-full flex items-center justify-center bg-muted rounded-md p-10"><Loader2 className="h-8 w-8 animate-spin" /></div> : <> 
+        <CardContent>
+            {isSettingsLoading ? (
+                <div className="w-full h-64 flex items-center justify-center bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin" /></div>
+            ) : (
+                <div className="space-y-4">
                     <div className="flex items-center justify-center gap-4">
-                        <Button variant="outline" size="icon" onClick={() => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}><ChevronLeft /></Button>
+                        <Button variant="outline" size="icon" onClick={() => setCurrentMonth(m => subMonths(m, 1))}><ChevronLeft /></Button>
                         <span className="font-semibold text-center w-32">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
-                        <Button variant="outline" size="icon" onClick={() => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}><ChevronRight /></Button>
+                        <Button variant="outline" size="icon" onClick={() => setCurrentMonth(m => addMonths(m, 1))}><ChevronRight /></Button>
                     </div>
                     <ScrollArea className="h-96 rounded-md border">
                         <Table><TableBody>
                             {allDaysInMonth.map((day) => {
                                 const dayString = format(day, 'yyyy-MM-dd');
-                                const isChecked = holidays.has(dayString);
-                                const isRecurringOff = (schoolConfig?.offDays ?? [0, 6]).includes(day.getDay());
+                                // DATA IS FROM CONTEXT
+                                const isSpecialHoliday = holidays.has(dayString);
+                                const isRecurringOff = (schoolConfig?.offDays ?? []).includes(day.getDay());
+                                const isChecked = isSpecialHoliday || isRecurringOff;
+                                
                                 return (
                                     <TableRow key={dayString} className={`has-[:checked]:bg-primary/10 ${isRecurringOff ? 'bg-muted/50 text-muted-foreground' : ''}`}>
-                                        <TableCell className="w-12 text-center py-2"><Checkbox id={dayString} checked={isChecked || isRecurringOff} disabled={isRecurringOff || isSaving} onCheckedChange={(checked) => handleDayToggle(day, !!checked)} /></TableCell>
-                                        <TableCell className="py-2"><Label htmlFor={dayString} className={`w-full block ${isRecurringOff ? 'cursor-not-allowed' : 'cursor-pointer'}`}>{format(day, 'eeee, d MMMM yyyy', { locale: id })}</Label></TableCell>
+                                        <TableCell className="w-12 text-center py-2">
+                                            <Checkbox 
+                                                id={dayString} 
+                                                checked={isChecked} 
+                                                disabled={isRecurringOff || isSaving} 
+                                                onCheckedChange={(checked) => handleDayToggle(day, !!checked)} 
+                                            />
+                                        </TableCell>
+                                        <TableCell className="py-2">
+                                            <Label htmlFor={dayString} className={`w-full block ${isRecurringOff ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                                {format(day, 'eeee, d MMMM yyyy', { locale: id })}
+                                            </Label>
+                                        </TableCell>
                                     </TableRow>
                                 );
                             })}
                         </TableBody></Table>
                     </ScrollArea>
-                </>}
-            </div>
-            <div className="md:col-span-1 space-y-4 border-l-0 md:border-l md:pl-6">
-                <h3 className="font-semibold">Konfigurasi Bulan Ini</h3>
-                <p className="text-sm text-muted-foreground">Jumlah hari kerja efektif di bulan <span className="font-bold">{format(currentMonth, 'MMMM', { locale: id })}</span> akan digunakan untuk menghitung persentase kehadiran.</p>
-                <div className="space-y-2">
-                    <Label>Jumlah Hari Kerja Efektif</Label>
-                    <div className="flex items-center h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm select-none">{isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (currentMonthData?.workDays ?? calculatedWorkDays)}</div>
-                    <p className="text-xs text-muted-foreground">Dihitung otomatis dan disimpan secara real-time.</p>
                 </div>
-            </div>
+            )}
         </CardContent>
     </Card>
   );
 }
 
+
 // =======================================================================================
-// Original Configuration Page Component (Now with specific save for weights)
+// Original Configuration Page Component
 // =======================================================================================
 export default function KonfigurasiAbsenPage() {
   const { toast } = useToast();
   const firestore = useFirestore();
   const { user, isUserLoading: isAuthLoading } = useUser();
   const router = useRouter();
+  // Get the main config from the context
   const { schoolConfig, isSettingsLoading } = useSettings(); 
   
   const [isSaving, setIsSaving] = useState(false);
-  const [isSavingWeights, setIsSavingWeights] = useState(false); // State for weights save button
+  const [isSavingWeights, setIsSavingWeights] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [isQrLoading, setIsQrLoading] = useState(true);
 
+  // State for form fields
   const [isAttendanceActive, setIsAttendanceActive] = useState(true);
   const [offDays, setOffDays] = useState<number[]>([]);
   const [useLocationValidation, setUseLocationValidation] = useState(true);
@@ -206,6 +177,7 @@ export default function KonfigurasiAbsenPage() {
     if (!isLoading && !isAdmin) router.replace('/dashboard');
   }, [isLoading, isAdmin, router]);
 
+  // Effect to populate form when schoolConfig from context is loaded
   useEffect(() => {
     if (schoolConfig) {
       setIsAttendanceActive(schoolConfig.isAttendanceActive ?? true);
@@ -218,10 +190,7 @@ export default function KonfigurasiAbsenPage() {
       setCheckInStart(schoolConfig.checkInStartTime ?? '06:00');
       setCheckInEnd(schoolConfig.checkInEndTime ?? '08:00');
       setCheckOutTimes(schoolConfig.checkOutTimes || {});
-      setAttendanceWeights({
-        ...DEFAULT_WEIGHTS,
-        ...(schoolConfig.attendanceWeights || {})
-      });
+      setAttendanceWeights({ ...DEFAULT_WEIGHTS, ...(schoolConfig.attendanceWeights || {}) });
       if (schoolConfig.qrCodeValue) setQrCodeValue(schoolConfig.qrCodeValue);
     }
   }, [schoolConfig]);
@@ -230,11 +199,8 @@ export default function KonfigurasiAbsenPage() {
     if (qrCodeValue) {
       setIsQrLoading(true);
       QRCode.toDataURL(qrCodeValue, { width: 300, margin: 2, errorCorrectionLevel: 'H' }, (err, url) => {
-        if (err) {
-          toast({ variant: 'destructive', title: 'Gagal Membuat QR Code' });
-        } else {
-          setQrCodeDataUrl(url);
-        }
+        if (err) toast({ variant: 'destructive', title: 'Gagal Membuat QR Code' });
+        else setQrCodeDataUrl(url);
         setIsQrLoading(false);
       });
     } else {
@@ -255,24 +221,14 @@ export default function KonfigurasiAbsenPage() {
   };
   
   const handleDownloadQr = () => {
-    if (!qrCodeDataUrl) {
-      toast({
-        variant: "destructive",
-        title: "QR Code belum dapat diunduh",
-        description: "Silakan tunggu atau buat ulang QR code.",
-      });
-      return;
-    }
+    if (!qrCodeDataUrl) return;
     const a = document.createElement("a");
     a.href = qrCodeDataUrl;
     a.download = "absensi-qrcode.png";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    toast({
-      title: "Berhasil diunduh",
-      description: "QR Code berhasil diunduh.",
-    });
+    toast({ title: "Berhasil diunduh" });
   };
 
   const handleGetCurrentLocation = () => {
@@ -280,11 +236,14 @@ export default function KonfigurasiAbsenPage() {
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLatitude(pos.coords.latitude.toFixed(6)); setLongitude(pos.coords.longitude.toFixed(6));
-        setIsLocating(false); toast({ title: 'Lokasi Ditemukan' });
+        setLatitude(pos.coords.latitude.toFixed(6)); 
+        setLongitude(pos.coords.longitude.toFixed(6));
+        setIsLocating(false); 
+        toast({ title: 'Lokasi Ditemukan' });
       },
       () => {
-        setIsLocating(false); toast({ variant: 'destructive', title: 'Gagal Mendapatkan Lokasi' });
+        setIsLocating(false); 
+        toast({ variant: 'destructive', title: 'Gagal Mendapatkan Lokasi' });
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -313,23 +272,21 @@ export default function KonfigurasiAbsenPage() {
             latitude: parseFloat(latitude), longitude: parseFloat(longitude), radius: Number(radius),
             checkInStartTime: checkInStart, checkInEndTime: checkInEnd,
             checkOutTimes,
-            attendanceWeights, // Still saved here to ensure consistency if user clicks main button
         };
 
         batch.set(schoolConfigRef, generalSettings, { merge: true });
         
         await batch.commit();
-        toast({ title: 'Pengaturan Disimpan', description: 'Konfigurasi telah diperbarui.' });
+        toast({ title: 'Pengaturan Disimpan', description: 'Konfigurasi umum telah diperbarui.' });
 
     } catch (err) {
         console.error("Save failed: ", err);
-        toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: 'Terjadi kesalahan saat menyimpan data.' });
+        toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: 'Terjadi kesalahan.' });
     } finally {
         setIsSaving(false);
     }
   };
 
-  // ADDED: Specific handler to save only the attendance weights
   const handleSaveWeights = async () => {
     if (!firestore) return;
     setIsSavingWeights(true);
@@ -339,7 +296,7 @@ export default function KonfigurasiAbsenPage() {
         toast({ title: 'Bobot Disimpan', description: 'Bobot kehadiran telah berhasil diperbarui.' });
     } catch (err) {
         console.error("Save weights failed: ", err);
-        toast({ variant: 'destructive', title: 'Gagal Menyimpan Bobot', description: 'Terjadi kesalahan saat menyimpan data.' });
+        toast({ variant: 'destructive', title: 'Gagal Menyimpan Bobot' });
     } finally {
         setIsSavingWeights(false);
     }
@@ -359,7 +316,7 @@ export default function KonfigurasiAbsenPage() {
     <div className="space-y-6 pb-24">
         <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">Pengaturan Absensi</h1>
-            <p className="text-sm text-muted-foreground">Atur parameter fundamental, hari libur rutin, dan hari libur bulanan untuk sistem absensi.</p>
+            <p className="text-sm text-muted-foreground">Atur parameter, hari libur rutin, dan hari libur bulanan untuk sistem absensi.</p>
         </div>
 
       <Card>
@@ -367,14 +324,14 @@ export default function KonfigurasiAbsenPage() {
         <CardContent className="p-6 space-y-4">
             <div className="flex items-center justify-between rounded-lg border p-4">
                 <div>
-                    <Label htmlFor="holiday-mode" className="font-semibold">Non Aktif Sementara</Label>
-                    <p className="text-sm text-muted-foreground">Jika aktif, sistem absensi non-aktif untuk semua.</p>
+                    <Label htmlFor="holiday-mode" className="font-semibold">Sistem Absensi Aktif</Label>
+                    <p className="text-sm text-muted-foreground">Jika non-aktif, sistem absensi tidak bisa digunakan.</p>
                 </div>
-                <Switch id="holiday-mode" checked={!isAttendanceActive} onCheckedChange={(checked) => setIsAttendanceActive(!checked)} />
+                <Switch id="holiday-mode" checked={isAttendanceActive} onCheckedChange={setIsAttendanceActive} />
             </div>
             <div className="rounded-lg border p-4">
                 <Label className='font-medium'>Hari Libur Rutin</Label>
-                <p className="text-sm text-muted-foreground pt-1">Pilih hari libur rutin. Absensi non-aktif pada hari ini.</p>
+                <p className="text-sm text-muted-foreground pt-1">Pilih hari libur yang berulang setiap minggu.</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 pt-4">
                     {daysOfWeek.map(day => (
                         <div key={day.value} className="flex items-center space-x-2">
@@ -435,7 +392,7 @@ export default function KonfigurasiAbsenPage() {
                 <div className="space-y-4">
                     <div><Label>Jam Pulang (Spesifik per Hari)</Label><p className="text-sm text-muted-foreground">Atur rentang waktu absensi pulang untuk tiap hari kerja.</p></div>
                     <div className="space-y-3 rounded-md border p-3">
-                        {daysOfWeek.filter(d => d.value !== 0).map(day => (
+                        {daysOfWeek.filter(d => ![0,6].includes(d.value)).map(day => (
                             <div key={day.value} className="grid grid-cols-1 sm:grid-cols-5 items-center gap-2">
                                 <Label htmlFor={`checkout-start-${day.value}`} className="sm:col-span-2 text-sm font-normal">{day.label}</Label>
                                 <div className="sm:col-span-3 grid grid-cols-2 gap-2">
@@ -456,52 +413,13 @@ export default function KonfigurasiAbsenPage() {
               <CardDescription>Tentukan bobot poin untuk setiap kategori kehadiran. Nilai ini digunakan untuk menghitung persentase kehadiran.</CardDescription>
           </CardHeader>
           <CardContent className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                  <Label htmlFor="weight-present">Hadir Penuh (1.0)</Label>
-                  <Input id="weight-present" type="number" step="0.05" min="0" max="1" value={attendanceWeights.present} onChange={e => handleWeightChange('present', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label htmlFor="weight-late">Terlambat</Label>
-                  <Input id="weight-late" type="number" step="0.05" min="0" max="1" value={attendanceWeights.late} onChange={e => handleWeightChange('late', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label htmlFor="weight-no_check_out">Tidak Absen Pulang</Label>
-                  <Input id="weight-no_check_out" type="number" step="0.05" min="0" max="1" value={attendanceWeights.no_check_out} onChange={e => handleWeightChange('no_check_out', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label htmlFor="weight-no_check_in">Tidak Absen Masuk</Label>
-                  <Input id="weight-no_check_in" type="number" step="0.05" min="0" max="1" value={attendanceWeights.no_check_in} onChange={e => handleWeightChange('no_check_in', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label htmlFor="weight-sick">Sakit</Label>
-                  <Input id="weight-sick" type="number" step="0.05" min="0" max="1" value={attendanceWeights.sick} onChange={e => handleWeightChange('sick', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label htmlFor="weight-permission">Izin Pribadi</Label>
-                  <Input id="weight-permission" type="number" step="0.05" min="0" max="1" value={attendanceWeights.permission} onChange={e => handleWeightChange('permission', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label htmlFor="weight-official_duty">Dinas Penuh (1 Hari)</Label>
-                  <Input id="weight-official_duty" type="number" step="0.05" min="0" max="1" value={attendanceWeights.official_duty} onChange={e => handleWeightChange('official_duty', e.target.value)} />
-              </div>
-               <div className="space-y-2">
-                  <Label htmlFor="weight-dinas_pagi">Dinas Pagi</Label>
-                  <Input id="weight-dinas_pagi" type="number" step="0.05" min="0" max="1" value={attendanceWeights.dinas_pagi} onChange={e => handleWeightChange('dinas_pagi', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label htmlFor="weight-dinas_siang">Dinas Siang</Label>
-                  <Input id="weight-dinas_siang" type="number" step="0.05" min="0" max="1" value={attendanceWeights.dinas_siang} onChange={e => handleWeightChange('dinas_siang', e.target.value)} />
-              </div>
-               <div className="space-y-2">
-                  <Label htmlFor="weight-early_leave">Izin Pulang Cepat</Label>
-                  <Input id="weight-early_leave" type="number" step="0.05" min="0" max="1" value={attendanceWeights.early_leave} onChange={e => handleWeightChange('early_leave', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label htmlFor="weight-absent">Alpa (0)</Label>
-                  <Input id="weight-absent" type="number" step="0.05" min="0" max="1" value={attendanceWeights.absent} onChange={e => handleWeightChange('absent', e.target.value)} />
-              </div>
+              {Object.keys(DEFAULT_WEIGHTS).map(key => (
+                  <div className="space-y-2" key={key}>
+                      <Label htmlFor={`weight-${key}`}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</Label>
+                      <Input id={`weight-${key}`} type="number" step="0.05" min="0" max="1" value={attendanceWeights[key]} onChange={e => handleWeightChange(key, e.target.value)} />
+                  </div>
+              ))}
           </CardContent>
-          {/* ADDED: CardFooter with a dedicated save button for weights */}
           <CardFooter className="flex justify-end p-6 pt-0">
               <Button onClick={handleSaveWeights} disabled={isSavingWeights || isSaving}>
                   {(isSavingWeights) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -510,7 +428,7 @@ export default function KonfigurasiAbsenPage() {
           </CardFooter>
       </Card>
 
-      <MonthlyConfigCalendar />
+      <SyncedMonthlyCalendar />
       
        <Card>
             <CardHeader className="p-4 sm:p-6"><CardTitle>QR Code Absensi</CardTitle></CardHeader>

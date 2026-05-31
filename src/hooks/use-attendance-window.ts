@@ -17,6 +17,7 @@ export interface SchoolConfig {
   offDays?: number[];
 }
 
+// Note: MonthlyConfig is no longer used for holidays in this hook.
 export interface MonthlyConfig {
     holidays?: string[]; // e.g. ["2024-05-01", "2024-05-09"]
 }
@@ -50,18 +51,15 @@ export const useAttendanceWindow = () => {
     configRef
   );
 
-  const monthlyConfigId = useMemo(() => format(new Date(), 'yyyy-MM'), []);
-  const monthlyConfigRef = useMemo(() => 
-    firestore ? doc(firestore, 'monthlyConfigs', monthlyConfigId) : null, 
-    [firestore, monthlyConfigId]
+  const holidayId = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
+  const holidayRef = useMemo(() => 
+    firestore ? doc(firestore, 'holidays', holidayId) : null, 
+    [firestore, holidayId]
   );
-  const { data: monthlyConfig, isLoading: monthlyConfigLoading } = useDoc<MonthlyConfig>(
-      user, 
-      monthlyConfigRef
-  );
+  const { data: todayHoliday, isLoading: holidayLoading } = useDoc(user, holidayRef);
 
   useEffect(() => {
-    const isLoading = schoolConfigLoading || monthlyConfigLoading;
+    const isLoading = schoolConfigLoading || holidayLoading;
     if (isLoading) {
       setStatus("LOADING");
       return;
@@ -75,10 +73,9 @@ export const useAttendanceWindow = () => {
     const checkStatus = () => {
       const now = new Date();
       const today = now.getDay();
-      const todayStr = format(now, 'yyyy-MM-dd');
 
       const isRegularOffDay = schoolConfig.offDays?.includes(today);
-      const isSpecialHoliday = monthlyConfig?.holidays?.includes(todayStr);
+      const isSpecialHoliday = !!todayHoliday;
 
       if (isRegularOffDay || isSpecialHoliday) {
           setStatus("HOLIDAY");
@@ -126,10 +123,10 @@ export const useAttendanceWindow = () => {
     const intervalId = setInterval(checkStatus, 30000);
 
     return () => clearInterval(intervalId);
-  }, [schoolConfig, monthlyConfig, schoolConfigLoading, monthlyConfigLoading]);
+  }, [schoolConfig, todayHoliday, schoolConfigLoading, holidayLoading]);
 
   const memoizedValues = useMemo(() => {
-    const isLoading = schoolConfigLoading || monthlyConfigLoading;
+    const isLoading = schoolConfigLoading || holidayLoading;
 
     if (!schoolConfig) {
       return { status, isLoading, config: null, checkInEnd: null, checkOutStart: null };
@@ -149,7 +146,7 @@ export const useAttendanceWindow = () => {
       checkInEnd: schoolConfig.checkInEndTime ? parseTime(schoolConfig.checkInEndTime) : null,
       checkOutStart: checkoutStartStr ? parseTime(checkoutStartStr) : null,
     };
-  }, [status, schoolConfig, schoolConfigLoading, monthlyConfigLoading]);
+  }, [status, schoolConfig, schoolConfigLoading, holidayLoading]);
 
   return memoizedValues;
 };

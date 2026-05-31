@@ -1,121 +1,78 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback, Dispatch, SetStateAction } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 import { useFirestore } from '@/firebase';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, collection } from 'firebase/firestore';
 
 // --- TYPE DEFINITIONS ---
 export interface SchoolConfig {
   offDays?: number[];
-  useTimeValidation?: boolean;
-  checkInEndTime?: string;
-  loginTitle?: string;
-  loginSubtitle?: string;
-  loginLogoUrl?: string;
-  customAppIcon?: string;
-  [key: string]: any;
-}
-
-interface MonthlyConfig {
-  holidays?: string[];
-  workDays?: number;
-  [key: string]: any;
+  [key: string]: any; // Keep it flexible
 }
 
 interface SettingsContextType {
   schoolConfig: SchoolConfig | null;
-  setSchoolConfig: Dispatch<SetStateAction<SchoolConfig | null>>;
-  monthlyConfigs: { [key: string]: MonthlyConfig };
-  isSettingsLoading: boolean; // For the main school config
-  isMonthlyConfigLoading: (monthId: string) => boolean;
-  subscribeToMonth: (monthId: string) => void;
-  updateHolidaysForMonth: (monthId: string, holidays: string[], workDays: number) => Promise<void>;
+  holidays: Set<string>; // Using a Set for efficient lookups (O(1))
+  isSettingsLoading: boolean; // A single flag indicating if essential settings are loading
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
-// --- THE UPGRADED PROVIDER ---
+// --- THE REFACTORED PROVIDER ---
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const firestore = useFirestore();
+
   const [schoolConfig, setSchoolConfig] = useState<SchoolConfig | null>(null);
-  const [monthlyConfigs, setMonthlyConfigs] = useState<{ [key: string]: MonthlyConfig }>({});
-  const [isSettingsLoading, setIsSettingsLoading] = useState(true);
+  const [holidays, setHolidays] = useState<Set<string>>(new Set());
+  
+  const [isSchoolConfigLoading, setIsSchoolConfigLoading] = useState(true);
+  const [isHolidaysLoading, setIsHolidaysLoading] = useState(true);
 
-  // State to manage monthly listeners and loading states
-  const [loadingMonths, setLoadingMonths] = useState<Set<string>>(new Set());
-  const [activeListeners, setActiveListeners] = useState<{ [key: string]: () => void }>({});
-
-  // Effect for the global school config
+  // Effect for the global school config (e.g., offDays, location, etc.)
   useEffect(() => {
-    if (!firestore) return;
+    if (!firestore) {
+        setIsSchoolConfigLoading(false);
+        return;
+    };
+    
     const unsub = onSnapshot(doc(firestore, 'schoolConfig', 'default'), (doc) => {
-      setSchoolConfig(doc.data() as SchoolConfig);
-      setIsSettingsLoading(false);
-    }, () => {
-      setIsSettingsLoading(false);
+      setSchoolConfig(doc.exists() ? (doc.data() as SchoolConfig) : {});
+      setIsSchoolConfigLoading(false);
+    }, (error) => {
+      console.error("Failed to load school config:", error);
+      setIsSchoolConfigLoading(false);
     });
     return () => unsub();
   }, [firestore]);
 
-  const subscribeToMonth = useCallback((monthId: string) => {
-    if (!firestore || activeListeners[monthId] || loadingMonths.has(monthId)) {
-      return;
+  // Effect for the top-level 'holidays' collection (real-time)
+  useEffect(() => {
+    if (!firestore) {
+        setIsHolidaysLoading(false);
+        return;
     }
 
-    setLoadingMonths(prev => new Set(prev).add(monthId));
-    const monthlyConfigRef = doc(firestore, 'monthlyConfigs', monthId);
-
-    const unsubscribe = onSnapshot(monthlyConfigRef, (doc) => {
-      setMonthlyConfigs(prev => ({
-        ...prev,
-        [monthId]: (doc.data() as MonthlyConfig) ?? { holidays: [], workDays: 0 }
-      }));
-      setLoadingMonths(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(monthId);
-        return newSet;
+    const unsub = onSnapshot(collection(firestore, 'holidays'), (snapshot) => {
+      const holidayIds = new Set<string>();
+      snapshot.forEach(doc => {
+        holidayIds.add(doc.id); // The document ID is the date string, e.g., '2024-05-30'
       });
+      setHolidays(holidayIds);
+      setIsHolidaysLoading(false);
     }, (error) => {
-      console.error(`Error fetching config for month ${monthId}:`, error);
-      setLoadingMonths(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(monthId);
-        return newSet;
-      });
+      console.error("Failed to load holidays:", error);
+      setIsHolidaysLoading(false);
     });
 
-    setActiveListeners(prev => ({ ...prev, [monthId]: unsubscribe }));
-  }, [firestore, activeListeners, loadingMonths]);
-
-  const updateHolidaysForMonth = useCallback(async (monthId: string, holidays: string[], workDays: number) => {
-    if (!firestore) throw new Error("Penyimpanan Gagal: Koneksi database tidak ditemukan.");
-    const monthlyRef = doc(firestore, 'monthlyConfigs', monthId);
-    await setDoc(monthlyRef, {
-      id: monthId,
-      holidays: holidays,
-      workDays: workDays
-    }, { merge: true });
+    return () => unsub();
   }, [firestore]);
 
-  const isMonthlyConfigLoading = useCallback((monthId: string) => {
-    return loadingMonths.has(monthId) || monthlyConfigs[monthId] === undefined;
-  }, [loadingMonths, monthlyConfigs]);
-
-  useEffect(() => {
-    return () => {
-      Object.values(activeListeners).forEach(unsubscribe => unsubscribe());
-    };
-  }, [activeListeners]);
-
+  // The context value is memoized for performance
   const value = useMemo(() => ({
     schoolConfig,
-    setSchoolConfig, // Exposing the setter
-    monthlyConfigs,
-    isSettingsLoading,
-    isMonthlyConfigLoading,
-    subscribeToMonth,
-    updateHolidaysForMonth,
-  }), [schoolConfig, monthlyConfigs, isSettingsLoading, isMonthlyConfigLoading, subscribeToMonth, updateHolidaysForMonth, setSchoolConfig]);
+    holidays,
+    isSettingsLoading: isSchoolConfigLoading || isHolidaysLoading,
+  }), [schoolConfig, holidays, isSchoolConfigLoading, isHolidaysLoading]);
 
   return (
     <SettingsContext.Provider value={value}>
@@ -124,7 +81,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// --- HOOK to access the context ---
+// --- CUSTOM HOOK to access the context easily ---
 export function useSettings() {
   const context = useContext(SettingsContext);
   if (context === undefined) {

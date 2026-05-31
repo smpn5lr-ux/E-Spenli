@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useUser, useFirestore } from '@/firebase';
-import { format, isSameMonth, parseISO } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,53 +19,55 @@ const coreStatusToVariant: { [key in CoreStatus]: 'default' | 'destructive' | 's
     'Izin': 'secondary',
 };
 
+// REFACTORED: The main component for the user report page.
 export default function UserPersonalReportPage() {
     const { user, isUserLoading } = useUser();
     const firestore = useFirestore();
     const { toast } = useToast();
 
-    const [currentMonth] = useState(new Date()); 
+    // REFACTORED: Get all settings from the single source of truth.
+    const { schoolConfig, holidays, isSettingsLoading } = useSettings();
+
+    const [currentMonth, setCurrentMonth] = useState(new Date()); 
     const [monthlyReportData, setMonthlyReportData] = useState<MonthlyReportData[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isReportLoading, setIsReportLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const { schoolConfig, monthlyConfigs, subscribeToMonth, isMonthlyConfigLoading } = useSettings();
-    const monthId = format(currentMonth, 'yyyy-MM');
-    const monthlyConfigData = monthlyConfigs[monthId];
-
+    // REFACTORED: This effect now has all the data it needs from the start.
     useEffect(() => {
-        subscribeToMonth(monthId);
-    }, [monthId, subscribeToMonth]);
-
-    useEffect(() => {
-        if (user && schoolConfig && monthlyConfigData) {
+        // Only run if the essential data is ready.
+        if (user && firestore && schoolConfig) {
             const fetchReport = async () => {
-                setIsLoading(true);
+                setIsReportLoading(true);
                 setError(null);
                 try {
-                    const reportData = await fetchUserMonthlyReportData(firestore, user.uid, currentMonth, schoolConfig, monthlyConfigData);
+                    // Call the refactored function with the correct arguments.
+                    const reportData = await fetchUserMonthlyReportData(firestore, user.uid, currentMonth, schoolConfig, holidays);
                     setMonthlyReportData(reportData);
                 } catch (err: any) {
                     console.error("Error fetching user report detail:", err);
                     setError(err.message || 'Gagal memuat data laporan Anda.');
                 } finally {
-                    setIsLoading(false);
+                    setIsReportLoading(false);
                 }
             };
             fetchReport();
-        } else if (!isUserLoading && !isMonthlyConfigLoading(monthId)) {
-            setIsLoading(false);
         }
-    }, [user, currentMonth, schoolConfig, monthlyConfigData, firestore, isUserLoading, isMonthlyConfigLoading]);
+    }, [user, firestore, currentMonth, schoolConfig, holidays]); // Dependencies are clear and correct.
 
     const handlePrevMonthClick = () => {
-        toast({
-            title: "Akses Riwayat Dibatasi",
-            description: "Silahkan hubungi admin untuk melihat riwayat laporan sebelumnya.",
-        });
+         const newMonth = new Date(currentMonth.setMonth(currentMonth.getMonth() - 1));
+         setCurrentMonth(newMonth);
+    };
+     const handleNextMonthClick = () => {
+        const newMonth = new Date(currentMonth.setMonth(currentMonth.getMonth() + 1));
+        setCurrentMonth(newMonth);
     };
     
-    if (isUserLoading) {
+    // Combined loading state for a cleaner check.
+    const isPageLoading = isUserLoading || isSettingsLoading;
+    
+    if (isPageLoading) {
         return <div className="flex h-screen items-center justify-center"><Loader2 className="h-10 w-10 animate-spin" /></div>;
     }
 
@@ -75,7 +77,7 @@ export default function UserPersonalReportPage() {
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight">Laporan Kehadiran Anda</h1>
                     <p className="text-sm text-muted-foreground">
-                        Laporan kehadiran pribadi Anda untuk bulan ini.
+                        Laporan kehadiran pribadi Anda per bulan.
                     </p>
                 </div>
                 
@@ -84,7 +86,7 @@ export default function UserPersonalReportPage() {
                         <ChevronLeft className="h-4 w-4" />
                     </Button>
                     <span className="w-36 text-center font-semibold capitalize">{format(currentMonth, 'MMMM yyyy', { locale: id })}</span>
-                    <Button variant="outline" size="icon" disabled={true}>
+                    <Button variant="outline" size="icon" onClick={handleNextMonthClick}>
                         <ChevronRight className="h-4 w-4" />
                     </Button>
                 </div>
@@ -95,7 +97,6 @@ export default function UserPersonalReportPage() {
                     <div className="overflow-x-auto">
                         <Table>
                             <TableHeader>
-                                {/* MODIFIKASI DI SINI: Mengganti warna menjadi biru (primary) */}
                                 <TableRow className="bg-primary text-primary-foreground hover:bg-primary/90">
                                     <TableHead className="w-[5%] text-center text-white">No</TableHead>
                                     <TableHead className="w-[25%] text-white">Tanggal</TableHead>
@@ -106,7 +107,7 @@ export default function UserPersonalReportPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {isLoading ? (
+                                {isReportLoading ? (
                                      <TableRow><TableCell colSpan={6} className="h-64 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /><p className="mt-2">Memuat data laporan...</p></TableCell></TableRow>
                                 ) : error ? (
                                     <TableRow><TableCell colSpan={6} className="h-24 text-center text-red-600">{error}</TableCell></TableRow>

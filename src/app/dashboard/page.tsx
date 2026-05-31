@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation';
 import { getFromCache, setInCache } from '@/lib/cache';
 import { calculateAttendanceStats, getDailyStaffAttendanceStats } from '@/lib/attendance';
 import { useAttendanceWindow } from '@/hooks/use-attendance-window';
+import { useSettings } from '@/contexts/SettingsContext'; // FINAL BUILD FIX: Import useSettings
 
 import TodaysActivityTable from '@/components/dashboard/RecentAttendanceTable';
 import AbsentUsersTable from '@/components/dashboard/AbsentUsersTable';
@@ -64,6 +65,7 @@ const StatCard = ({ title, value, icon: Icon, description, isLoading, className,
     </Card>
 );
 
+// --- PersonalAttendanceCardUI (No changes needed here) ---
 const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionData, approvedLeaveData }: { attendanceData: any, isLoading: boolean, lateSubmissionData: any, approvedLeaveData: any }) => {
     const router = useRouter();
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -182,7 +184,6 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
         const hasCheckedIn = !!attendanceRecord?.checkInTime;
         const hasCheckedOut = !!attendanceRecord?.checkOutTime;
         
-        // Handle Official Duty (Dinas) status first
         if (onDutyStatus) {
             if (hasCheckedOut) {
                 return { text: 'Absensi Selesai', disabled: true, page: '#' };
@@ -217,38 +218,23 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
         }
 
         switch (attendanceWindowStatus) {
-            case 'HOLIDAY':
-                return { text: 'Hari Libur', disabled: true, page: '#' };
-
-            case 'CHECK_IN_OPEN':
-                return hasCheckedIn ? { text: 'Sudah Absen Masuk', disabled: true, page: '#' } : { text: 'Absen Masuk', disabled: false, page: '/dashboard/absen' };
-
-            case 'CHECK_OUT_OPEN':
-                return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' };
-
+            case 'HOLIDAY': return { text: 'Hari Libur', disabled: true, page: '#' };
+            case 'CHECK_IN_OPEN': return hasCheckedIn ? { text: 'Sudah Absen Masuk', disabled: true, page: '#' } : { text: 'Absen Masuk', disabled: false, page: '/dashboard/absen' };
+            case 'CHECK_OUT_OPEN': return { text: 'Absen Pulang', disabled: false, page: '/dashboard/absen' };
             case 'CLOSED':
                 const now = currentTime;
                 const isAfterCheckInEnd = checkInEnd && now > checkInEnd;
                 const isBeforeCheckOutStart = checkOutStart && now < checkOutStart;
-
                 if (!hasCheckedIn && isAfterCheckInEnd && isBeforeCheckOutStart) {
                     return { text: 'Ajukan Keterlambatan', disabled: false, page: '/dashboard/terlambat/ajukan' };
                 }
-
                 if (hasCheckedIn && !hasCheckedOut) {
                     return { text: 'Belum Waktunya Pulang', disabled: true, page: '#' };
                 }
-                
                 return { text: 'Sesi Absensi Ditutup', disabled: true, page: '#' };
-
-            case 'UPCOMING':
-                return { text: 'Belum Waktunya Absen', disabled: true, page: '#' };
-
-            case 'SESSION_INACTIVE':
-                return { text: 'Sesi Absensi Nonaktif', disabled: true, page: '#' };
-
-            default:
-                return { text: 'Memuat Status...', disabled: true, page: '#' };
+            case 'UPCOMING': return { text: 'Belum Waktunya Absen', disabled: true, page: '#' };
+            case 'SESSION_INACTIVE': return { text: 'Sesi Absensi Nonaktif', disabled: true, page: '#' };
+            default: return { text: 'Memuat Status...', disabled: true, page: '#' };
         }
 
     }, [isLoading, attendanceRecord, schoolConfigData, currentTime, attendanceWindowStatus, checkInEnd, checkOutStart, hasPendingLateSubmission, hasApprovedLateSubmission, hasRejectedLateSubmission, isUserOnLeaveToday, onDutyStatus]);
@@ -257,64 +243,20 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
         <Card className="h-full flex flex-col">
             <CardHeader><CardTitle>Kehadiran Anda Hari Ini</CardTitle><CardDescription>Status kehadiran dan jam absensi Anda.</CardDescription></CardHeader>
             <CardContent className="flex flex-col flex-grow items-center justify-center space-y-6 pb-8">
-                 {onDutyStatus && (
-                    <Alert variant="default" className="mb-4">
-                        <Info className="h-4 w-4" />
-                        <AlertTitle>Anda Sedang Bertugas Dinas</AlertTitle>
-                        <AlertDescription>
-                            Sistem absensi terbuka untuk Anda. Silakan lakukan absen masuk dan pulang kapan saja selama hari ini.
-                        </AlertDescription>
-                    </Alert>
-                )}
-                 {isUserOnLeaveToday && (
-                     <Alert variant="default" className="mb-4">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <AlertTitle>Anda Sedang Dalam Masa Izin</AlertTitle>
-                        <AlertDescription>Izin Anda untuk hari ini telah disetujui. Anda tidak perlu melakukan absensi.</AlertDescription>
-                    </Alert>
-                )}
-                 {hasPendingLateSubmission && (
-                     <Alert variant="default" className="mb-4">
-                        <MailWarning className="h-4 w-4" />
-                        <AlertTitle>Pengajuan Terlambat Terkirim</AlertTitle>
-                        <AlertDescription>Pengajuan keterangan terlambat Anda sedang menunggu persetujuan dari Kepala Sekolah.</AlertDescription>
-                    </Alert>
-                )}
-                {hasApprovedLateSubmission && (
-                     <Alert variant="default" className="mb-4">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <AlertTitle>Pengajuan Terlambat Disetujui</AlertTitle>
-                        <AlertDescription>Keterangan terlambat Anda hari ini telah disetujui. Periksa laporan jika perlu.</AlertDescription>
-                    </Alert>
-                )}
-                {hasRejectedLateSubmission && (
-                     <Alert variant="destructive" className="mb-4">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Pengajuan Terlambat Ditolak</AlertTitle>
-                        <AlertDescription>Pengajuan Anda ditolak. Silakan ajukan kembali atau hubungi Kepala Sekolah jika perlu.</AlertDescription>
-                    </Alert>
-                )}
-                {reminder && (
-                    <Alert variant={reminder.variant as "default" | "destructive" | null | undefined} className="mb-4">
-                        {reminder.variant === 'destructive' ? <AlertCircle className="h-4 w-4" /> : <Info className="h-4 w-4" />}
-                        <AlertTitle>{reminder.title}</AlertTitle>
-                        <AlertDescription>{reminder.description}</AlertDescription>
-                    </Alert>
-                )}
-                {attendanceWindowStatus === 'HOLIDAY' && !isUserOnLeaveToday && (
-                     <Alert variant="default" className="mb-4">
-                        <Info className="h-4 w-4" />
-                        <AlertTitle>Hari Libur</AlertTitle>
-                        <AlertDescription>Sistem absensi tidak aktif selama hari libur. Nikmati waktu istirahat Anda.</AlertDescription>
-                    </Alert>
-                )}
+                 {onDutyStatus && (<Alert variant="default"><Info className="h-4 w-4" /><AlertTitle>Anda Sedang Bertugas Dinas</AlertTitle><AlertDescription>Sistem absensi terbuka. Silakan lakukan absen masuk dan pulang kapan saja.</AlertDescription></Alert>)}
+                 {isUserOnLeaveToday && (<Alert variant="default"><CheckCircle2 className="h-4 w-4" /><AlertTitle>Anda Sedang Izin</AlertTitle><AlertDescription>Izin Anda telah disetujui. Anda tidak perlu absensi.</AlertDescription></Alert>)}
+                 {hasPendingLateSubmission && (<Alert variant="default"><MailWarning className="h-4 w-4" /><AlertTitle>Pengajuan Terlambat Terkirim</AlertTitle><AlertDescription>Menunggu persetujuan Kepala Sekolah.</AlertDescription></Alert>)}
+                {hasApprovedLateSubmission && (<Alert variant="default"><CheckCircle2 className="h-4 w-4" /><AlertTitle>Pengajuan Terlambat Disetujui</AlertTitle><AlertDescription>Keterangan terlambat Anda telah disetujui.</AlertDescription></Alert>)}
+                {hasRejectedLateSubmission && (<Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Pengajuan Terlambat Ditolak</AlertTitle><AlertDescription>Silakan ajukan kembali atau hubungi admin.</AlertDescription></Alert>)}
+                {reminder && (<Alert variant={reminder.variant as "default" | "destructive" | null | undefined}><Info className="h-4 w-4" /><AlertTitle>{reminder.title}</AlertTitle><AlertDescription>{reminder.description}</AlertDescription></Alert>)}
+                {attendanceWindowStatus === 'HOLIDAY' && !isUserOnLeaveToday && (<Alert variant="default"><Info className="h-4 w-4" /><AlertTitle>Hari Libur</AlertTitle><AlertDescription>Nikmati waktu istirahat Anda.</AlertDescription></Alert>)}
                 <div className="text-center">
                     <p className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight">{format(currentTime, 'HH:mm:ss')}</p>
                     <p className="text-lg text-muted-foreground">{format(currentTime, 'eeee, d MMMM yyyy', { locale: id })}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 w-full">
-                    <div className="text-center bg-muted p-3 rounded-lg"><h3 className="font-semibold text-sm flex items-center justify-center gap-2"><LogIn size={14}/> Absen Masuk</h3><p className="text-3xl font-bold">{checkInTime}</p></div>
-                    <div className="text-center bg-muted p-3 rounded-lg"><h3 className="font-semibold text-sm flex items-center justify-center gap-2"><LogOut size={14}/> Absen Pulang</h3><p className="text-3xl font-bold">{checkOutTime}</p></div>
+                    <div className="text-center bg-muted p-3 rounded-lg"><h3 className="font-semibold text-sm flex items-center justify-center gap-2"><LogIn size={14}/> Masuk</h3><p className="text-3xl font-bold">{checkInTime}</p></div>
+                    <div className="text-center bg-muted p-3 rounded-lg"><h3 className="font-semibold text-sm flex items-center justify-center gap-2"><LogOut size={14}/> Pulang</h3><p className="text-3xl font-bold">{checkOutTime}</p></div>
                 </div>
                 <div className="w-full flex flex-col items-center space-y-2 pt-4">
                     <Button size="lg" className="w-full h-12 text-lg font-bold" onClick={() => router.push(buttonStatus.page)} disabled={buttonStatus.disabled}>{isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{buttonStatus.text}</Button>
@@ -325,7 +267,7 @@ const PersonalAttendanceCardUI = ({ attendanceData, isLoading, lateSubmissionDat
     );
 };
 
-
+// --- MonthlyAttendanceChartUI (No changes needed here) ---
 const MonthlyAttendanceChartUI = ({ summaryData, isLoading }: { summaryData: any, isLoading: boolean }) => {
     const now = new Date();
     const chartData = [
@@ -363,9 +305,11 @@ const MonthlyAttendanceChartUI = ({ summaryData, isLoading }: { summaryData: any
     );
 };
 
+// FINAL BUILD FIX: The hook now uses useSettings to get the required configuration.
 function useMonthlyAttendanceSummary(user: any) {
     const firestore = useFirestore();
-    const cacheKey = useMemo(() => user ? `monthlySummary_v4_${user.uid}` : null, [user]);
+    const { schoolConfig, holidays, isSettingsLoading } = useSettings(); // Get settings from context
+    const cacheKey = useMemo(() => user ? `monthlySummary_v5_${user.uid}` : null, [user]);
     const [summary, setSummary] = useState<any>(() => cacheKey ? getFromCache(cacheKey) || null : null);
     const [isLoading, setIsLoading] = useState(summary === null);
 
@@ -374,12 +318,15 @@ function useMonthlyAttendanceSummary(user: any) {
     }), []);
 
     useEffect(() => {
-        if (!user || !firestore || !cacheKey) return;
+        // Guard against missing data
+        if (!user || !firestore || !cacheKey || isSettingsLoading || !schoolConfig) return;
+        
         const fetchStats = async () => {
             setIsLoading(true);
             try {
                 const now = new Date();
-                const stats = await calculateAttendanceStats(firestore, user.uid, now);
+                // Pass the correct arguments to the function
+                const stats = await calculateAttendanceStats(firestore, user.uid, now, schoolConfig, holidays);
                 const newSummary = {
                     attendanceCount: stats.totalHadir,
                     izinCount: stats.totalIzin,
@@ -396,12 +343,15 @@ function useMonthlyAttendanceSummary(user: any) {
                 setIsLoading(false);
             }
         };
-        if (summary === null) { fetchStats(); }
-    }, [user, firestore, cacheKey, defaultSummary]);
 
-    return { summary: summary || defaultSummary, isLoading };
+        if (summary === null) { fetchStats(); }
+    // Add new dependencies to the array
+    }, [user, firestore, cacheKey, defaultSummary, schoolConfig, holidays, isSettingsLoading]);
+
+    return { summary: summary || defaultSummary, isLoading: isLoading || isSettingsLoading };
 }
 
+// --- useStaffDashboardStats (No changes needed here) ---
 function useStaffDashboardStats(firestore: any, user: any) {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const cacheKey = `staffDashboardStats_v7_${todayStr}`;
@@ -417,19 +367,12 @@ function useStaffDashboardStats(firestore: any, user: any) {
       setIsSettled(false);
       return;
     }
-
-    const timer = setTimeout(() => {
-      setFinalStatus(attendanceWindowStatus);
-      setIsSettled(true);
-    }, 400); // Stabilization delay
-
+    const timer = setTimeout(() => { setFinalStatus(attendanceWindowStatus); setIsSettled(true); }, 400);
     return () => clearTimeout(timer);
   }, [isWindowLoading, attendanceWindowStatus]);
 
   useEffect(() => {
-    if (!isSettled || !firestore || !user) {
-      return;
-    }
+    if (!isSettled || !firestore || !user) return;
 
     const processStats = async () => {
       if (finalStatus === 'HOLIDAY') {
@@ -438,9 +381,8 @@ function useStaffDashboardStats(firestore: any, user: any) {
       } else {
         try {
           const cachedStats = getFromCache(cacheKey);
-          if (cachedStats) {
-            setStats(cachedStats);
-          } else {
+          if (cachedStats) setStats(cachedStats);
+          else {
             const dailyStats = await getDailyStaffAttendanceStats(firestore);
             setStats(dailyStats);
             setInCache(cacheKey, dailyStats);
@@ -451,14 +393,13 @@ function useStaffDashboardStats(firestore: any, user: any) {
         }
       }
     };
-
     processStats();
-
   }, [isSettled, finalStatus, firestore, user, cacheKey, defaultStats]);
 
   return { stats: stats || defaultStats, isLoading: !isSettled || (finalStatus !== 'HOLIDAY' && !stats) };
 }
 
+// --- Dashboard Components (No changes needed) ---
 const HeadmasterDashboard = ({ user, router }: any) => {
     const firestore = useFirestore();
     const { stats, isLoading: isStatsLoading } = useStaffDashboardStats(firestore, user);
@@ -467,46 +408,18 @@ const HeadmasterDashboard = ({ user, router }: any) => {
     const { data: todaysAttendance, isLoading: isAttendanceLoading } = useCollection(user, todaysAttendanceQuery);
     const todaysLateSubmissionQuery = useMemoFirebase(() => user ? query(collection(firestore, 'users', user.uid, 'lateSubmissions'), where('date', '==', format(new Date(), 'yyyy-MM-dd')), limit(1)) : null, [firestore, user]);
     const { data: lateSubmissionData, isLoading: isLateSubmissionLoading } = useCollection(user, todaysLateSubmissionQuery);
-
-    const approvedLeaveQuery = useMemoFirebase(() => {
-        if (!user) return null;
-        return query(
-            collection(firestore, 'users', user.uid, 'leaveRequests'),
-            where('status', '==', 'approved')
-        );
-    }, [firestore, user]);
+    const approvedLeaveQuery = useMemoFirebase(() => user ? query(collection(firestore, 'users', user.uid, 'leaveRequests'), where('status', '==', 'approved')) : null, [firestore, user]);
     const { data: approvedLeaveData, isLoading: isLeaveLoading } = useCollection(user, approvedLeaveQuery);
 
     return (
         <>
-            <PersonalAttendanceCardUI 
-                attendanceData={todaysAttendance} 
-                isLoading={isAttendanceLoading || isLateSubmissionLoading || isLeaveLoading}
-                lateSubmissionData={lateSubmissionData} 
-                approvedLeaveData={approvedLeaveData}
-            />
+            <PersonalAttendanceCardUI attendanceData={todaysAttendance} isLoading={isAttendanceLoading || isLateSubmissionLoading || isLeaveLoading} lateSubmissionData={lateSubmissionData} approvedLeaveData={approvedLeaveData} />
             <MonthlyAttendanceChartUI summaryData={personalSummary} isLoading={isPersonalSummaryLoading} />
-            <StatCard title="Total Hadir Hari Ini" value={stats.hadir} icon={UserCheck} isLoading={isStatsLoading} className="bg-[hsl(var(--card-green-bg))] text-[hsl(var(--card-green-fg))]" />
-            <StatCard title="Total Izin/Sakit Hari Ini" value={stats.izin + stats.sakit} icon={BookUser} description={`${stats.izin} Izin, ${stats.sakit} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
-            <StatCard 
-                title="Menunggu Persetujuan Izin" 
-                value={stats.pendingLeave}
-                icon={MailWarning} 
-                description="Pengajuan izin/sakit"
-                isLoading={isStatsLoading} 
-                className="cursor-pointer transition-colors bg-[hsl(var(--card-blue-bg))] text-[hsl(var(--card-blue-fg))] hover:bg-opacity-90"
-                onClick={() => router.push('/dashboard/izin-kepala-sekolah')}
-            />
-            <StatCard 
-                title="Persetujuan Terlambat"
-                value={`${stats.pendingLate} / ${stats.totalLate}`}
-                icon={Clock4}
-                description="Pengajuan menunggu dari total"
-                isLoading={isStatsLoading} 
-                className="cursor-pointer transition-colors bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))] hover:bg-opacity-90"
-                onClick={() => router.push('/dashboard/terlambat/persetujuan')}
-            />
-            <StatCard title="Total Alpa Hari Ini" value={stats.alpa} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
+            <StatCard title="Hadir Hari Ini" value={stats.hadir} icon={UserCheck} isLoading={isStatsLoading} className="bg-[hsl(var(--card-green-bg))] text-[hsl(var(--card-green-fg))]" />
+            <StatCard title="Izin/Sakit Hari Ini" value={stats.izin + stats.sakit} icon={BookUser} description={`${stats.izin} Izin, ${stats.sakit} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
+            <StatCard title="Menunggu Izin" value={stats.pendingLeave} icon={MailWarning} description="Pengajuan izin/sakit" isLoading={isStatsLoading} className="cursor-pointer transition-colors bg-[hsl(var(--card-blue-bg))] text-[hsl(var(--card-blue-fg))] hover:bg-opacity-90" onClick={() => router.push('/dashboard/izin-kepala-sekolah')} />
+            <StatCard title="Persetujuan Terlambat" value={`${stats.pendingLate} / ${stats.totalLate}`} icon={Clock4} description="Pengajuan menunggu" isLoading={isStatsLoading} className="cursor-pointer transition-colors bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))] hover:bg-opacity-90" onClick={() => router.push('/dashboard/terlambat/persetujuan')} />
+            <StatCard title="Alpa Hari Ini" value={stats.alpa} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
             <div className="col-span-1 md:col-span-2 lg:col-span-4 xl:col-span-4"><TodaysActivityTable /></div>
             <div className="col-span-1 md:col-span-2 lg:col-span-4 xl:col-span-4"><AbsentUsersTable /></div>
         </> 
@@ -518,18 +431,11 @@ const AdminDashboard = ({ user, router }: any) => {
     const { stats, isLoading: isStatsLoading } = useStaffDashboardStats(firestore, user);
     return (
         <>
-            <StatCard title="Total Hadir Hari Ini" value={stats.hadir} icon={UserCheck} isLoading={isStatsLoading} className="bg-[hsl(var(--card-green-bg))] text-[hsl(var(--card-green-fg))]" />
-            <StatCard title="Total Izin/Sakit Hari Ini" value={stats.izin + stats.sakit} icon={BookUser} description={`${stats.izin} Izin, ${stats.sakit} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
+            <StatCard title="Hadir Hari Ini" value={stats.hadir} icon={UserCheck} isLoading={isStatsLoading} className="bg-[hsl(var(--card-green-bg))] text-[hsl(var(--card-green-fg))]" />
+            <StatCard title="Izin/Sakit Hari Ini" value={stats.izin + stats.sakit} icon={BookUser} description={`${stats.izin} Izin, ${stats.sakit} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
             <StatCard title="Menunggu Persetujuan" value={stats.pendingLeave} icon={MailWarning} isLoading={isStatsLoading} className="bg-[hsl(var(--card-blue-bg))] text-[hsl(var(--card-blue-fg))]" />
-            <StatCard 
-                title="Persetujuan Terlambat" 
-                value={`${stats.pendingLate} / ${stats.totalLate}`}
-                description="Pengajuan menunggu dari total"
-                icon={Clock4} 
-                isLoading={isStatsLoading} 
-                className="bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))]" 
-            />
-            <StatCard title="Total Alpa Hari Ini" value={stats.alpa} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
+            <StatCard title="Persetujuan Terlambat" value={`${stats.pendingLate} / ${stats.totalLate}`} description="Pengajuan menunggu" icon={Clock4} isLoading={isStatsLoading} className="bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))]" />
+            <StatCard title="Alpa Hari Ini" value={stats.alpa} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
             <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4"><TodaysActivityTable /></div>
             <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4"><AbsentUsersTable /></div>
         </> 
@@ -543,25 +449,13 @@ const StaffDashboard = ({ user }: any) => {
     const { data: todaysAttendance, isLoading: isAttendanceLoading } = useCollection(user, todaysAttendanceQuery);
     const todaysLateSubmissionQuery = useMemoFirebase(() => user ? query(collection(firestore, 'users', user.uid, 'lateSubmissions'), where('date', '==', format(new Date(), 'yyyy-MM-dd')), limit(1)) : null, [firestore, user]);
     const { data: lateSubmissionData, isLoading: isLateSubmissionLoading } = useCollection(user, todaysLateSubmissionQuery);
-
-    const approvedLeaveQuery = useMemoFirebase(() => {
-        if (!user) return null;
-        return query(
-            collection(firestore, 'users', user.uid, 'leaveRequests'),
-            where('status', '==', 'approved')
-        );
-    }, [firestore, user]);
+    const approvedLeaveQuery = useMemoFirebase(() => user ? query(collection(firestore, 'users', user.uid, 'leaveRequests'), where('status', '==', 'approved')) : null, [firestore, user]);
     const { data: approvedLeaveData, isLoading: isLeaveLoading } = useCollection(user, approvedLeaveQuery);
 
     return (
         <>
             <div className="md:col-span-2 lg:col-span-2 xl:col-span-2">
-                <PersonalAttendanceCardUI 
-                    attendanceData={todaysAttendance} 
-                    isLoading={isAttendanceLoading || isLateSubmissionLoading || isLeaveLoading} 
-                    lateSubmissionData={lateSubmissionData} 
-                    approvedLeaveData={approvedLeaveData}
-                />
+                <PersonalAttendanceCardUI attendanceData={todaysAttendance} isLoading={isAttendanceLoading || isLateSubmissionLoading || isLeaveLoading} lateSubmissionData={lateSubmissionData} approvedLeaveData={approvedLeaveData} />
             </div>
             <div className="md:col-span-2 lg:col-span-1 xl:col-span-2"><MonthlyAttendanceChartUI summaryData={summary} isLoading={isSummaryLoading} /></div>
         </> 

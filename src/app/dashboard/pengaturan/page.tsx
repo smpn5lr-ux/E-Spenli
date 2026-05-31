@@ -41,7 +41,7 @@ export default function PengaturanPage() {
   const [isReportSaving, setIsReportSaving] = useState(false);
   const [isApiKeySaving, setIsApiKeySaving] = useState(false);
   const [isNotificationSaving, setIsNotificationSaving] = useState(false);
-  const [isAppIconSaving, setIsAppIconSaving] = useState(false);
+  const [isPwaSaving, setIsPwaSaving] = useState(false);
   const [isLoginSettingsSaving, setIsLoginSettingsSaving] = useState(false);
 
   // Report settings
@@ -62,10 +62,17 @@ export default function PengaturanPage() {
   const [isNotificationActive, setIsNotificationActive] = useState(false);
   const [notificationDuration, setNotificationDuration] = useState(10);
 
+<<<<<<< HEAD
   // App Settings
   const [appName, setAppName] = useState('');
+=======
+  // PWA/App settings
+>>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
   const [appIconPreview, setAppIconPreview] = useState<string | null>(null);
   const appIconInputRef = useRef<HTMLInputElement>(null);
+  const [appName, setAppName] = useState('');
+  const [appShortName, setAppShortName] = useState('');
+  const [appDescription, setAppDescription] = useState('');
 
   // Login Page settings
   const [loginLogoPreview, setLoginLogoPreview] = useState<string | null>(null);
@@ -76,10 +83,10 @@ export default function PengaturanPage() {
   const loginLogoInputRef = useRef<HTMLInputElement>(null);
 
   const userDocRef = useMemoFirebase(() => user ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
-  const schoolConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'schoolConfig', 'default') : null, [firestore]);
+  const settingsRef = useMemoFirebase(() => firestore ? doc(firestore, 'settings', 'school') : null, [firestore]);
 
   const { data: userData, isLoading: isUserDataLoading } = useDoc<{ name: string; role: string; email: string; nip?: string; photoURL?: string; }>(user, userDocRef);
-  const { data: schoolConfigData, isLoading: isConfigLoading } = useDoc<any>(user, schoolConfigRef);
+  const { data: settingsData, isLoading: isSettingsLoading } = useDoc<any>(user, settingsRef);
 
   useEffect(() => {
     if (userData) {
@@ -89,6 +96,7 @@ export default function PengaturanPage() {
   }, [userData]);
 
   useEffect(() => {
+<<<<<<< HEAD
     if (schoolConfigData) {
       setGovernmentAgency(schoolConfigData.governmentAgency ?? '');
       setEducationAgency(schoolConfigData.educationAgency ?? '');
@@ -110,9 +118,46 @@ export default function PengaturanPage() {
         setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
         setIsNotificationActive(schoolConfigData.adminNotification.isActive ?? false);
         setNotificationDuration(schoolConfigData.adminNotification.duration ?? 10);
+=======
+    if (settingsData) {
+      // Report Header settings
+      const reportHeader = settingsData.reportHeader || {};
+      setGovernmentAgency(reportHeader.governmentAgency ?? '');
+      setEducationAgency(reportHeader.educationAgency ?? '');
+      setSchoolName(reportHeader.schoolName ?? '');
+      setAddress(reportHeader.address ?? '');
+      setHeadmasterName(reportHeader.headmasterName ?? '');
+      setHeadmasterNip(reportHeader.headmasterNip ?? '');
+      setReportCity(reportHeader.reportCity ?? '');
+      
+      // Gemini API Key
+      setGeminiApiKey(settingsData.geminiApiKey ?? '');
+      
+      // PWA settings
+      const pwa = settingsData.pwa || {};
+      setAppIconPreview(pwa.logo ?? null);
+      setAppName(pwa.name ?? '');
+      setAppShortName(pwa.shortName ?? '');
+      setAppDescription(pwa.description ?? '');
+
+      // Login page settings
+      const loginPage = settingsData.loginPage || {};
+      setLoginLogoPreview(loginPage.logoUrl ?? null);
+      setLoginTitle(loginPage.title ?? '');
+      setLoginSubtitle(loginPage.subtitle ?? '');
+      setLoginCopyright(loginPage.copyright ?? '');
+      setLoginCopyrightSubtitle(loginPage.copyrightSubtitle ?? '');
+      
+      // Notification settings
+      if (settingsData.adminNotification) {
+        setNotificationTitle(settingsData.adminNotification.title ?? '');
+        setNotificationMessage(settingsData.adminNotification.message ?? '');
+        setIsNotificationActive(settingsData.adminNotification.isActive ?? false);
+        setNotificationDuration(settingsData.adminNotification.duration ?? 10);
+>>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
       }
     }
-  }, [schoolConfigData]);
+  }, [settingsData]);
 
   const getIdentifier = () => {
     if (!userData) return null;
@@ -241,8 +286,8 @@ export default function PengaturanPage() {
     }
   };
 
-  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'appIcon' | 'loginPage') => {
-    if (!schoolConfigRef) return;
+  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'pwa' | 'loginPage') => {
+    if (!settingsRef) return;
     let dataToSave = {};
     let toastTitle = '';
     let toastDescription = '';
@@ -250,7 +295,7 @@ export default function PengaturanPage() {
     switch (type) {
         case 'report':
             setIsReportSaving(true);
-            dataToSave = { governmentAgency, educationAgency, schoolName, address, headmasterName, headmasterNip, reportCity };
+            dataToSave = { reportHeader: { governmentAgency, educationAgency, schoolName, address, headmasterName, headmasterNip, reportCity } };
             toastTitle = 'Pengaturan Laporan Disimpan';
             toastDescription = 'Informasi laporan PDF telah diperbarui.';
             break;
@@ -271,39 +316,56 @@ export default function PengaturanPage() {
             toastTitle = 'Pemberitahuan Disimpan';
             toastDescription = 'Pengaturan pemberitahuan telah diperbarui.';
             break;
+<<<<<<< HEAD
         case 'appIcon':
             setIsAppIconSaving(true);
             dataToSave = { appName, customAppIcon: appIconPreview };
             toastTitle = 'Pengaturan Aplikasi Disimpan';
             toastDescription = 'Nama dan logo aplikasi telah berhasil diperbarui.';
+=======
+        case 'pwa':
+            setIsPwaSaving(true);
+            dataToSave = { 
+                pwa: { 
+                    logo: appIconPreview, 
+                    name: appName, 
+                    shortName: appShortName, 
+                    description: appDescription 
+                }
+            };
+            toastTitle = 'Pengaturan PWA Disimpan';
+            toastDescription = 'Pengaturan PWA (logo, nama, dll) telah diperbarui.';
+>>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
             break;
         case 'loginPage':
             setIsLoginSettingsSaving(true);
             dataToSave = { 
-                loginLogoUrl: loginLogoPreview,
-                loginTitle,
-                loginSubtitle,
-                loginCopyright,
-                loginCopyrightSubtitle
+                loginPage: {
+                    logoUrl: loginLogoPreview,
+                    title: loginTitle,
+                    subtitle: loginSubtitle,
+                    copyright: loginCopyright,
+                    copyrightSubtitle: loginCopyrightSubtitle
+                }
             };
             toastTitle = 'Pengaturan Login Disimpan';
             toastDescription = 'Tampilan halaman login telah diperbarui.';
             break;
     }
 
-    setDocumentNonBlocking(schoolConfigRef, dataToSave, { merge: true });
+    setDocumentNonBlocking(settingsRef, dataToSave, { merge: true });
     toast({ title: toastTitle, description: toastDescription });
 
     if (type === 'report') setIsReportSaving(false);
     if (type === 'apiKey') setIsApiKeySaving(false);
     if (type === 'notification') setIsNotificationSaving(false);
-    if (type === 'appIcon') setIsAppIconSaving(false);
+    if (type === 'pwa') setIsPwaSaving(false);
     if (type === 'loginPage') setIsLoginSettingsSaving(false);
   };
 
   const getInitials = (name: string | undefined | null) => name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
 
-  const isLoading = isUserDataLoading || isAuthLoading || isConfigLoading;
+  const isLoading = isUserDataLoading || isAuthLoading || isSettingsLoading;
   const isAdmin = userData?.role === 'admin';
   const currentPhoto = photoPreview || userData?.photoURL || user?.photoURL;
   const identifierInfo = getIdentifier();
@@ -459,8 +521,13 @@ export default function PengaturanPage() {
 
             <section>
               <div className="mb-6">
+<<<<<<< HEAD
                 <h2 className="text-2xl font-bold tracking-tight">Pengaturan Aplikasi</h2>
                 <p className="text-muted-foreground">Atur nama dan logo aplikasi yang akan digunakan di seluruh antarmuka, termasuk pada PWA.</p>
+=======
+                <h2 className="text-2xl font-bold tracking-tight">Pengaturan Aplikasi (PWA)</h2>
+                <p className="text-muted-foreground">Sesuaikan ikon, nama, dan deskripsi aplikasi yang muncul saat diinstal di perangkat.</p>
+>>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
               </div>
               <Card>
                 <CardContent className="grid gap-6 pt-6">
@@ -484,12 +551,30 @@ export default function PengaturanPage() {
                            <Label className="font-semibold">Logo Aplikasi</Label>
                            <p className="text-sm text-muted-foreground">Klik ikon kamera untuk mengganti logo.<br className="hidden sm:block" />(PNG, maks 1MB)</p>
                         </div>
-                      </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="app-name">Nama Aplikasi</Label>
+                        <Input id="app-name" value={appName} onChange={e => setAppName(e.target.value)} placeholder="Nama lengkap aplikasi" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="app-short-name">Nama Singkat</Label>
+                        <Input id="app-short-name" value={appShortName} onChange={e => setAppShortName(e.target.value)} placeholder="Nama singkat untuk layar utama" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="app-description">Deskripsi Aplikasi</Label>
+                        <Textarea id="app-description" value={appDescription} onChange={e => setAppDescription(e.target.value)} placeholder="Deskripsi singkat tentang fungsi aplikasi" />
+                    </div>
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">
+<<<<<<< HEAD
                   <Button onClick={() => handleSettingsSave('appIcon')} disabled={isAppIconSaving}>
                     {isAppIconSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Simpan Pengaturan Aplikasi
+=======
+                  <Button onClick={() => handleSettingsSave('pwa')} disabled={isPwaSaving}>
+                    {isPwaSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Simpan Pengaturan PWA
+>>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
                   </Button>
                 </CardFooter>
               </Card>

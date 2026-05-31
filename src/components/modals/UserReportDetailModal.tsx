@@ -2,14 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useFirestore } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import { fetchUserMonthlyReportData } from '@/lib/attendance';
+import { useSettings } from '@/contexts/SettingsContext'; // FINAL BUILD FIX: Import useSettings
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2 } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+import { id } from 'date-fns/locale';
 
 type UserReportDetailModalProps = {
     user: { uid: string; name?: string } | null;
@@ -20,11 +21,11 @@ type UserReportDetailModalProps = {
 
 type ReportDetail = {
     id: string;
-    dateString: string;
+    date: string; // Changed from dateString to date
     status: string;
-    checkIn?: string;
-    checkOut?: string;
-    description?: string;
+    checkInTime: string | null; // Changed to match MonthlyReportData
+    checkOutTime: string | null; // Changed to match MonthlyReportData
+    keterangan: string; // Changed from description to keterangan
 };
 
 const statusVariant: Record<string, 'default' | 'destructive' | 'secondary' | 'outline'> = {
@@ -32,46 +33,44 @@ const statusVariant: Record<string, 'default' | 'destructive' | 'secondary' | 'o
     'Sakit': 'destructive',
     'Izin': 'secondary',
     'Alpa': 'destructive',
-    'Terlambat': 'outline',
 };
 
+// FINAL BUILD FIX: The entire component is refactored to use useSettings and the correct data structures.
 export default function UserReportDetailModal({ user, month, isOpen, onClose }: UserReportDetailModalProps) {
     const firestore = useFirestore();
+    const { schoolConfig, holidays, isSettingsLoading } = useSettings(); // Use the central settings context
     const [reportDetails, setReportDetails] = useState<ReportDetail[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!isOpen || !firestore || !user) return;
+        if (!isOpen || !firestore || !user || isSettingsLoading) return;
 
         const fetchDetails = async () => {
             setIsLoading(true);
             setError(null);
             try {
-                const schoolConfigRef = doc(firestore, 'schoolConfig', 'default');
-                const schoolConfigSnap = await getDoc(schoolConfigRef);
-                const schoolConfig = schoolConfigSnap.data() || {};
+                // Ensure schoolConfig is loaded before proceeding
+                if (!schoolConfig) {
+                    setError("Konfigurasi sekolah tidak dapat dimuat.");
+                    setIsLoading(false);
+                    return;
+                }
 
+                // Parse the month string into a Date object
                 let monthDate: Date;
                 const ymMatch = month.match(/^(\d{4})-(\d{2})$/);
                 if (ymMatch) {
-                    const y = Number(ymMatch[1]);
-                    const m = Number(ymMatch[2]) - 1;
-                    monthDate = new Date(y, m, 1);
+                    monthDate = new Date(Number(ymMatch[1]), Number(ymMatch[2]) - 1, 1);
                 } else {
                     monthDate = new Date(month);
                 }
 
-                const reportData = await fetchUserMonthlyReportData(firestore, user.uid, monthDate, schoolConfig, {});
-                const normalized: ReportDetail[] = (reportData as any[]).map(item => ({
-                    id: item.id,
-                    dateString: item.dateString || item.date || item.date_formatted || '',
-                    status: item.status || String(item.status || ''),
-                    checkIn: item.checkIn || item.checkInTime || item.check_in || undefined,
-                    checkOut: item.checkOut || item.checkOutTime || item.check_out || undefined,
-                    description: item.description || item.keterangan || undefined,
-                }));
-                setReportDetails(normalized);
+                // The function call is now correct, passing the loaded `schoolConfig` and `holidays`.
+                const reportData = await fetchUserMonthlyReportData(firestore, user.uid, monthDate, schoolConfig, holidays);
+                
+                // The data is already in the correct format, so we can set it directly.
+                setReportDetails(reportData);
             } catch (err) {
                 console.error("Error fetching user report details:", err);
                 setError("Gagal memuat rincian laporan. Silakan coba lagi.");
@@ -81,7 +80,7 @@ export default function UserReportDetailModal({ user, month, isOpen, onClose }: 
         };
 
         fetchDetails();
-    }, [isOpen, firestore, user, month]);
+    }, [isOpen, firestore, user, month, schoolConfig, holidays, isSettingsLoading]); // Updated dependencies
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -89,7 +88,7 @@ export default function UserReportDetailModal({ user, month, isOpen, onClose }: 
                 <DialogHeader>
                     <DialogTitle>Detail Laporan Kehadiran</DialogTitle>
                     <DialogDescription>
-                        Menampilkan rincian kehadiran untuk {user?.name} pada bulan {month}.
+                        Menampilkan rincian untuk {user?.name} pada bulan {month}.
                     </DialogDescription>
                 </DialogHeader>
                 {error && (
@@ -99,7 +98,7 @@ export default function UserReportDetailModal({ user, month, isOpen, onClose }: 
                     </Alert>
                 )}
                 <div className="mt-4 max-h-[60vh] overflow-y-auto">
-                    {isLoading ? (
+                    {isLoading || isSettingsLoading ? (
                         <div className="flex items-center justify-center h-48">
                             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                         </div>
@@ -118,13 +117,13 @@ export default function UserReportDetailModal({ user, month, isOpen, onClose }: 
                                 {reportDetails.length > 0 ? (
                                     reportDetails.map(day => (
                                         <TableRow key={day.id}>
-                                            <TableCell className="font-medium">{day.dateString}</TableCell>
+                                            <TableCell className="font-medium">{format(parseISO(day.date), 'eeee, dd MMMM yyyy', { locale: id })}</TableCell>
                                             <TableCell className="text-center">
                                                 <Badge variant={statusVariant[day.status] || 'default'}>{day.status}</Badge>
                                             </TableCell>
-                                            <TableCell className="text-center">{day.checkIn || '-'}</TableCell>
-                                            <TableCell className="text-center">{day.checkOut || '-'}</TableCell>
-                                            <TableCell>{day.description}</TableCell>
+                                            <TableCell className="text-center">{day.checkInTime ? format(parseISO(day.checkInTime), 'HH:mm') : '-'}</TableCell>
+                                            <TableCell className="text-center">{day.checkOutTime ? format(parseISO(day.checkOutTime), 'HH:mm') : '-'}</TableCell>
+                                            <TableCell>{day.keterangan}</TableCell>
                                         </TableRow>
                                     ))
                                 ) : (

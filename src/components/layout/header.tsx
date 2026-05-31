@@ -2,12 +2,12 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation';
 import { Avatar, AvatarImage, AvatarFallback } from '../ui/avatar';
 import { useUser, useFirestore, useMemoFirebase, useAuth } from '@/firebase';
 import { useDoc } from '@/firebase/firestore/use-doc';
 import { doc } from 'firebase/firestore';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { useSettings } from '@/contexts/SettingsContext'; // Import useSettings
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,10 +36,11 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
   const firestore = useFirestore();
   const { user } = useUser();
   const auth = useAuth();
-  const router = useRouter(); // Initialize the router
+  const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const { schoolConfig } = useSettings(); // Use settings context
 
-  const appLogo = PlaceHolderImages.find(p => p.id === 'app-logo');
+  const appLogoUrl = schoolConfig?.reportHeader?.logo || '/logofix.png'; // Get logo from settings
 
   const userDocRef = useMemoFirebase(() => {
     if (!user || !firestore) return null;
@@ -53,11 +54,9 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
     setIsLoggingOut(true);
     try {
       await signOut(auth);
-      // Use Next.js router for a smooth, client-side navigation
       router.push('/');
     } catch (error) {
       console.error("Logout failed", error);
-      // If logout fails, hide the loader to prevent getting stuck
       setIsLoggingOut(false);
     }
   };
@@ -143,7 +142,7 @@ export function Header({ isTransparent }: { isTransparent?: boolean }) {
           <DialogTrigger asChild>
             <button className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full">
               <Image
-                src={appLogo?.imageUrl || '/logofix.png'}
+                src={appLogoUrl} // Use the logo from settings
                 alt="App Logo"
                 width={36}
                 height={36}

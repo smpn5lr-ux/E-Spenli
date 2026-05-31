@@ -5,13 +5,8 @@ import { useFirestore } from '@/firebase';
 import { doc, writeBatch, Timestamp, collection } from 'firebase/firestore';
 import { fetchUserMonthlyReportData, MonthlyReportData } from '@/lib/attendance';
 import { 
-    Dialog, 
-    DialogContent, 
-    DialogHeader, 
-    DialogFooter, 
-    DialogTitle, 
-    DialogDescription,
-    DialogClose
+    Dialog, DialogContent, DialogHeader, DialogFooter, 
+    DialogTitle, DialogDescription, DialogClose
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,22 +21,20 @@ import { id } from 'date-fns/locale';
 
 // --- TYPE DEFINITIONS ---
 interface ProblematicDay {
-    id: string;
-    date: string;
-    status: string;
-    description: string;
+    id: string; date: string; status: string; description: string;
     checkInTime?: Timestamp | Date | null;
     checkOutTime?: Timestamp | Date | null;
 }
 
+// FINAL FIX: The props interface is now fully updated.
 interface EditAttendanceModalProps {
     user: { uid: string; [key: string]: any } | null;
     month: Date;
     isOpen: boolean;
     onClose: () => void;
     currentUser: { uid: string; [key: string]: any } | null;
-    schoolConfig: any; // DEFINITIVE FIX: Receive schoolConfig as a prop
-    monthlyConfig: any; // DEFINITIVE FIX: Receive monthlyConfig as a prop
+    schoolConfig: any; 
+    holidays: Set<string>; // It now correctly accepts the holidays Set.
 }
 
 // --- CONSTANTS ---
@@ -54,18 +47,15 @@ const FIX_CHECK_IN_ON_TIME = 'FIX_CHECK_IN_ON_TIME';
 const FIX_CHECK_IN_LATE = 'FIX_CHECK_IN_LATE';
 
 // --- HELPER FUNCTIONS ---
-const parseTime = (timeStr: string, baseDate: Date): Date => {
-    return parse(timeStr, 'HH:mm', baseDate);
-};
-
+const parseTime = (timeStr: string, baseDate: Date): Date => parse(timeStr, 'HH:mm', baseDate);
 const getRandomTimeInRange = (baseDate: Date, startTimeStr: string, endTimeStr: string): Date => {
     const startDate = parseTime(startTimeStr, baseDate);
     const endDate = parseTime(endTimeStr, baseDate);
-    const randomTime = new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
-    return randomTime;
+    return new Date(startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime()));
 };
 
-export default function EditAttendanceModal({ user, month, isOpen, onClose, currentUser, schoolConfig, monthlyConfig }: EditAttendanceModalProps) {
+// FINAL FIX: The entire component is now refactored to use the new props.
+export default function EditAttendanceModal({ user, month, isOpen, onClose, currentUser, schoolConfig, holidays }: EditAttendanceModalProps) {
     const firestore = useFirestore();
     const [problematicDays, setProblematicDays] = useState<ProblematicDay[]>([]);
     const [selectedActions, setSelectedActions] = useState<{ [key: string]: string | undefined }>({});
@@ -75,7 +65,6 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // DEFINITIVE FIX: Guard against missing props, not just isOpen.
         if (!isOpen || !firestore || !user || !schoolConfig) {
             setIsLoading(false);
             return;
@@ -85,30 +74,22 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
             setIsLoading(true);
             setError(null);
             try {
-                // DEFINITIVE FIX: Use the schoolConfig and monthlyConfig from props.
-                // No more manual fetching. monthlyConfig can be undefined, which is correct.
-                const reportData: MonthlyReportData[] = await fetchUserMonthlyReportData(firestore, user.uid, month, schoolConfig, monthlyConfig);
+                // The function call is now correct, passing `holidays` instead of the obsolete `monthlyConfig`.
+                const reportData: MonthlyReportData[] = await fetchUserMonthlyReportData(firestore, user.uid, month, schoolConfig, holidays);
                 
                 const problems: ProblematicDay[] = reportData
-                    .filter(d => 
-                        d.status === 'Alpa' || 
-                        d.keterangan === 'Tidak Absen Pulang' ||
-                        d.keterangan === 'Tidak Absen Masuk'
-                    )
+                    .filter(d => d.status === 'Alpa' || d.keterangan === 'Tidak Absen Pulang' || d.keterangan === 'Tidak Absen Masuk')
                     .map(d => ({
                         id: d.id,
                         date: d.date,
                         status: d.status,
-                        description: d.keterangan, // Map keterangan to description
+                        description: d.keterangan,
                         checkInTime: d.checkInTime ? parseISO(d.checkInTime) : null,
                         checkOutTime: d.checkOutTime ? parseISO(d.checkOutTime) : null,
                     }));
 
                 setProblematicDays(problems);
-                const initialActions = problems.reduce((acc, day) => {
-                    acc[day.id] = '';
-                    return acc;
-                }, {} as { [key: string]: string });
+                const initialActions = problems.reduce((acc, day) => ({ ...acc, [day.id]: '' }), {} as { [key: string]: string });
                 setSelectedActions(initialActions);
                 setLeaveReasons({});
             } catch (err) {
@@ -119,24 +100,16 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
             }
         };
         getProblematicDays();
-    // DEFINITIVE FIX: Add schoolConfig and monthlyConfig to the dependency array.
-    }, [isOpen, firestore, user, month, schoolConfig, monthlyConfig]);
+    // The dependency array is now correct.
+    }, [isOpen, firestore, user, month, schoolConfig, holidays]);
 
-    const handleActionChange = (dayId: string, action: string) => {
-        setSelectedActions(prev => ({ ...prev, [dayId]: action }));
-    };
-
-    const handleCheckboxChange = (dayId: string, checked: boolean | undefined, action: string) => {
-        setSelectedActions(prev => ({ ...prev, [dayId]: checked ? action : undefined }));
-    };
-    
-    const handleReasonChange = (dayId: string, reason: string) => {
-        setLeaveReasons(prev => ({ ...prev, [dayId]: reason }));
-    };
+    const handleActionChange = (dayId: string, action: string) => setSelectedActions(prev => ({ ...prev, [dayId]: action }));
+    const handleCheckboxChange = (dayId: string, checked: boolean | undefined, action: string) => setSelectedActions(prev => ({ ...prev, [dayId]: checked ? action : undefined }));
+    const handleReasonChange = (dayId: string, reason: string) => setLeaveReasons(prev => ({ ...prev, [dayId]: reason }));
 
     const handleSaveChanges = async () => {
         if (!currentUser?.uid || !schoolConfig || !user) {
-            setError("Konfigurasi tidak lengkap atau pengguna tidak ditemukan. Gagal menyimpan.");
+            setError("Konfigurasi tidak lengkap. Gagal menyimpan.");
             return;
         }
 
@@ -147,12 +120,10 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
         }
         
         for (const [dayId, action] of actionsToPerform) {
-            if ((action === FIX_AS_LEAVE || action === FIX_AS_OFFICIAL_DUTY || action === FIX_AS_SICK) && (!leaveReasons[dayId] || !leaveReasons[dayId].trim())) {
+            if ([FIX_AS_LEAVE, FIX_AS_OFFICIAL_DUTY, FIX_AS_SICK].includes(action || '') && (!leaveReasons[dayId] || !leaveReasons[dayId].trim())) {
                 const day = problematicDays.find(d => d.id === dayId);
                 const dateString = day ? format(parseISO(day.date), 'dd MMMM', { locale: id }) : '';
-                let type = 'Izin';
-                if (action === FIX_AS_OFFICIAL_DUTY) type = 'Dinas';
-                if (action === FIX_AS_SICK) type = 'Sakit';
+                let type = action === FIX_AS_SICK ? 'Sakit' : action === FIX_AS_OFFICIAL_DUTY ? 'Dinas' : 'Izin';
                 setError(`Keterangan ${type.toLowerCase()} untuk tanggal ${dateString} tidak boleh kosong.`);
                 return;
             }
@@ -175,57 +146,40 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
 
                 switch (action) {
                     case FIX_AS_PRESENT:
-                        const randomCheckIn = getRandomTimeInRange(recordDate, checkInStartTime, checkInEndTime);
-                        const randomCheckOut = getRandomTimeInRange(recordDate, checkOutStartTime, checkOutEndTime);
                         batch.set(attendanceRecordRef, {
                             userId: user.uid, date: day.id, 
-                            checkInTime: Timestamp.fromDate(randomCheckIn), 
-                            checkOutTime: Timestamp.fromDate(randomCheckOut), 
-                            status: 'Hadir', description: 'Kehadiran Penuh',
+                            checkInTime: Timestamp.fromDate(getRandomTimeInRange(recordDate, checkInStartTime, checkInEndTime)), 
+                            checkOutTime: Timestamp.fromDate(getRandomTimeInRange(recordDate, checkOutStartTime, checkOutEndTime)), 
+                            status: 'present', description: 'Kehadiran Penuh',
                             manualEntry: true, updatedBy: currentUser.uid, updatedAt: Timestamp.now()
                         });
                         break;
 
-                    case FIX_AS_LEAVE:
-                    case FIX_AS_OFFICIAL_DUTY:
-                    case FIX_AS_SICK:
-                        let leaveType = 'Izin';
-                        if (action === FIX_AS_OFFICIAL_DUTY) leaveType = 'Dinas';
-                        if (action === FIX_AS_SICK) leaveType = 'Sakit';
-
+                    case FIX_AS_LEAVE: case FIX_AS_OFFICIAL_DUTY: case FIX_AS_SICK:
+                        let leaveType = action === FIX_AS_SICK ? 'Sakit' : action === FIX_AS_OFFICIAL_DUTY ? 'Dinas' : 'Izin';
                         const leaveRecordRef = doc(collection(firestore, 'users', user.uid, 'leaveRequests'));
-                        
                         batch.set(leaveRecordRef, {
-                            userId: user.uid,
-                            status: 'approved',
-                            type: leaveType,
-                            reason: leaveReasons[dayId],
-                            startDate: Timestamp.fromDate(recordDate),
-                            endDate: Timestamp.fromDate(recordDate),
-                            requestedAt: Timestamp.now(),
-                            approvedAt: Timestamp.now(),
-                            approvedBy: currentUser.uid,
-                            manualEntry: true,
-                            updatedBy: currentUser.uid,
-                            updatedAt: Timestamp.now()
+                            userId: user.uid, status: 'approved', type: leaveType,
+                            reason: leaveReasons[dayId], startDate: Timestamp.fromDate(recordDate),
+                            endDate: Timestamp.fromDate(recordDate), requestedAt: Timestamp.now(),
+                            approvedAt: Timestamp.now(), approvedBy: currentUser.uid, manualEntry: true,
+                            updatedBy: currentUser.uid, updatedAt: Timestamp.now()
                         });
-                        batch.delete(attendanceRecordRef);
+                        if(day.status === 'Alpa') batch.delete(attendanceRecordRef); // Only delete if it was an 'Alpa' record
                         break;
 
                     case FIX_CHECK_OUT:
-                        const randomFixCheckOut = getRandomTimeInRange(recordDate, checkOutStartTime, checkOutEndTime);
                         batch.update(attendanceRecordRef, { 
-                            checkOutTime: Timestamp.fromDate(randomFixCheckOut),
-                            status: 'Hadir', description: 'Kehadiran Penuh',
+                            checkOutTime: Timestamp.fromDate(getRandomTimeInRange(recordDate, checkOutStartTime, checkOutEndTime)),
+                            status: 'present', description: 'Kehadiran Penuh',
                             updatedBy: currentUser.uid, updatedAt: Timestamp.now()
                         });
                         break;
                     
                     case FIX_CHECK_IN_ON_TIME:
-                        const randomFixCheckIn = getRandomTimeInRange(recordDate, checkInStartTime, checkInEndTime);
                         batch.update(attendanceRecordRef, {
-                            checkInTime: Timestamp.fromDate(randomFixCheckIn),
-                            status: 'Hadir', description: 'Kehadiran Penuh',
+                            checkInTime: Timestamp.fromDate(getRandomTimeInRange(recordDate, checkInStartTime, checkInEndTime)),
+                            status: 'present', description: 'Kehadiran Penuh',
                             updatedBy: currentUser.uid, updatedAt: Timestamp.now()
                         });
                         break;
@@ -233,10 +187,9 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
                     case FIX_CHECK_IN_LATE:
                         const lateCheckInStart = addMinutes(parseTime(checkInEndTime, recordDate), 1);
                         const lateCheckInEnd = addMinutes(lateCheckInStart, 59);
-                        const randomLateTime = new Date(lateCheckInStart.getTime() + Math.random() * (lateCheckInEnd.getTime() - lateCheckInStart.getTime()));
                         batch.update(attendanceRecordRef, {
-                            checkInTime: Timestamp.fromDate(randomLateTime),
-                            status: 'Hadir', description: 'Terlambat',
+                            checkInTime: Timestamp.fromDate(new Date(lateCheckInStart.getTime() + Math.random() * (lateCheckInEnd.getTime() - lateCheckInStart.getTime()))),
+                            status: 'late', description: 'Terlambat',
                             updatedBy: currentUser.uid, updatedAt: Timestamp.now()
                         });
                         break;
@@ -248,7 +201,7 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
 
         } catch (err) {
             console.error("Error saving attendance:", err);
-            setError("Gagal menyimpan perubahan. Silakan coba lagi.");
+            setError("Gagal menyimpan perubahan. Coba lagi.");
         } finally {
             setIsSaving(false);
         }
@@ -258,80 +211,26 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
 
     const renderProblemOptions = (day: ProblematicDay) => {
         const actionForDay = selectedActions[day.id];
-        
         if (day.status === 'Alpa') {
             return (
-                <RadioGroup 
-                    className="mt-2 flex flex-col gap-3"
-                    value={actionForDay || ''} 
-                    onValueChange={(value) => handleActionChange(day.id, value)}
-                >
-                    <div className="flex items-center space-x-2">
-                        <RadioGroupItem value={FIX_AS_PRESENT} id={`${day.id}-present`} />
-                        <Label htmlFor={`${day.id}-present`} className="font-normal cursor-pointer">Jadikan Hadir</Label>
-                    </div>
-
-                    <div className="flex flex-col space-y-2">
-                         <div className="flex items-center space-x-2">
-                            <RadioGroupItem value={FIX_AS_SICK} id={`${day.id}-sick`} />
-                            <Label htmlFor={`${day.id}-sick`} className="font-normal cursor-pointer">Jadikan Sakit</Label>
-                        </div>
-                        {actionForDay === FIX_AS_SICK && (
-                            <Textarea placeholder="Tuliskan keterangan sakit di sini..." className="ml-6 bg-background" value={leaveReasons[day.id] || ''} onChange={(e) => handleReasonChange(day.id, e.target.value)} />
-                        )}
-                    </div>
-
-                    <div className="flex flex-col space-y-2">
-                         <div className="flex items-center space-x-2">
-                            <RadioGroupItem value={FIX_AS_LEAVE} id={`${day.id}-leave`} />
-                            <Label htmlFor={`${day.id}-leave`} className="font-normal cursor-pointer">Jadikan Izin</Label>
-                        </div>
-                        {actionForDay === FIX_AS_LEAVE && (
-                            <Textarea placeholder="Tuliskan keterangan izin di sini..." className="ml-6 bg-background" value={leaveReasons[day.id] || ''} onChange={(e) => handleReasonChange(day.id, e.target.value)} />
-                        )}
-                    </div>
-
-                     <div className="flex flex-col space-y-2">
-                         <div className="flex items-center space-x-2">
-                            <RadioGroupItem value={FIX_AS_OFFICIAL_DUTY} id={`${day.id}-duty`} />
-                            <Label htmlFor={`${day.id}-duty`} className="font-normal cursor-pointer">Jadikan Dinas</Label>
-                        </div>
-                        {actionForDay === FIX_AS_OFFICIAL_DUTY && (
-                            <Textarea placeholder="Tuliskan keterangan tugas dinas..." className="ml-6 bg-background" value={leaveReasons[day.id] || ''} onChange={(e) => handleReasonChange(day.id, e.target.value)} />
-                        )}
-                    </div>
+                <RadioGroup className="mt-2 flex flex-col gap-3" value={actionForDay || ''} onValueChange={(value) => handleActionChange(day.id, value)}>
+                    <div className="flex items-center space-x-2"><RadioGroupItem value={FIX_AS_PRESENT} id={`${day.id}-present`} /><Label htmlFor={`${day.id}-present`} className="font-normal cursor-pointer">Jadikan Hadir</Label></div>
+                    <div className="flex flex-col space-y-2"><div className="flex items-center space-x-2"><RadioGroupItem value={FIX_AS_SICK} id={`${day.id}-sick`} /><Label htmlFor={`${day.id}-sick`} className="font-normal cursor-pointer">Jadikan Sakit</Label></div>{actionForDay === FIX_AS_SICK && (<Textarea placeholder="Keterangan sakit..." className="ml-6 bg-background" value={leaveReasons[day.id] || ''} onChange={(e) => handleReasonChange(day.id, e.target.value)} />)}</div>
+                    <div className="flex flex-col space-y-2"><div className="flex items-center space-x-2"><RadioGroupItem value={FIX_AS_LEAVE} id={`${day.id}-leave`} /><Label htmlFor={`${day.id}-leave`} className="font-normal cursor-pointer">Jadikan Izin</Label></div>{actionForDay === FIX_AS_LEAVE && (<Textarea placeholder="Keterangan izin..." className="ml-6 bg-background" value={leaveReasons[day.id] || ''} onChange={(e) => handleReasonChange(day.id, e.target.value)} />)}</div>
+                    <div className="flex flex-col space-y-2"><div className="flex items-center space-x-2"><RadioGroupItem value={FIX_AS_OFFICIAL_DUTY} id={`${day.id}-duty`} /><Label htmlFor={`${day.id}-duty`} className="font-normal cursor-pointer">Jadikan Dinas</Label></div>{actionForDay === FIX_AS_OFFICIAL_DUTY && (<Textarea placeholder="Keterangan tugas dinas..." className="ml-6 bg-background" value={leaveReasons[day.id] || ''} onChange={(e) => handleReasonChange(day.id, e.target.value)} />)}</div>
                 </RadioGroup>
             );
         }
         if (day.description === 'Tidak Absen Pulang') {
-            return (
-                <div className="flex items-center space-x-2 mt-2">
-                    <Checkbox 
-                        id={`${day.id}-checkout`} 
-                        checked={actionForDay === FIX_CHECK_OUT} 
-                        onCheckedChange={(checked) => handleCheckboxChange(day.id, !!checked, FIX_CHECK_OUT)} 
-                    />
-                    <Label htmlFor={`${day.id}-checkout`} className="font-normal cursor-pointer">Lengkapi Absen Pulang</Label>
-                </div>
-            );
+            return (<div className="flex items-center space-x-2 mt-2"><Checkbox id={`${day.id}-checkout`} checked={actionForDay === FIX_CHECK_OUT} onCheckedChange={(checked) => handleCheckboxChange(day.id, !!checked, FIX_CHECK_OUT)} /><Label htmlFor={`${day.id}-checkout`} className="font-normal cursor-pointer">Lengkapi Absen Pulang</Label></div>);
         }
-         if (day.description === 'Tidak Absen Masuk') {
+        if (day.description === 'Tidak Absen Masuk') {
             return (
-                <RadioGroup 
-                    className="mt-2 flex flex-col gap-3"
-                    value={actionForDay || ''} 
-                    onValueChange={(value) => handleActionChange(day.id, value)}
-                >
-                    <div className="flex items-center space-x-2">
-                        <RadioGroupItem value={FIX_CHECK_IN_ON_TIME} id={`${day.id}-checkin-ontime`} />
-                        <Label htmlFor={`${day.id}-checkin-ontime`} className="font-normal cursor-pointer">Jadikan Hadir</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <RadioGroupItem value={FIX_CHECK_IN_LATE} id={`${day.id}-checkin-late`} />
-                        <Label htmlFor={`${day.id}-checkin-late`} className="font-normal cursor-pointer">Jadikan Terlambat</Label>
-                    </div>
+                <RadioGroup className="mt-2 flex flex-col gap-3" value={actionForDay || ''} onValueChange={(value) => handleActionChange(day.id, value)}>
+                    <div className="flex items-center space-x-2"><RadioGroupItem value={FIX_CHECK_IN_ON_TIME} id={`${day.id}-checkin-ontime`} /><Label htmlFor={`${day.id}-checkin-ontime`} className="font-normal cursor-pointer">Jadikan Hadir</Label></div>
+                    <div className="flex items-center space-x-2"><RadioGroupItem value={FIX_CHECK_IN_LATE} id={`${day.id}-checkin-late`} /><Label htmlFor={`${day.id}-checkin-late`} className="font-normal cursor-pointer">Jadikan Terlambat</Label></div>
                 </RadioGroup>
-            )
+            );
         }
         return null;
     };
@@ -340,19 +239,10 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>Perbaiki Kehadiran</DialogTitle>
-                    <DialogDescription>
-                        Pilih tindakan perbaikan untuk setiap tanggal yang bermasalah.
-                    </DialogDescription>
+                    <DialogTitle>Perbaiki Kehadiran: {user?.name}</DialogTitle>
+                    <DialogDescription>Pilih tindakan perbaikan untuk setiap tanggal yang bermasalah.</DialogDescription>
                 </DialogHeader>
-                
-                {error && (
-                    <Alert variant="destructive" className="mt-4">
-                        <AlertTitle>Terjadi Kesalahan</AlertTitle>
-                        <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                )}
-
+                {error && (<Alert variant="destructive" className="mt-4"><AlertTitle>Error</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>)}
                 <div className="py-4">
                     {isLoading ? (
                         <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-3/4" /></div>
@@ -369,10 +259,9 @@ export default function EditAttendanceModal({ user, month, isOpen, onClose, curr
                             ))}
                         </div>
                     ) : (
-                        <p className="py-8 text-center text-sm text-muted-foreground">Tidak ada data yang perlu diperbaiki pada periode ini.</p>
+                        <p className="py-8 text-center text-sm text-muted-foreground">Tidak ada data yang perlu diperbaiki.</p>
                     )}
                 </div>
-                
                 <DialogFooter className="pt-4">
                     <DialogClose asChild><Button variant="ghost" disabled={isSaving}>Batal</Button></DialogClose>
                     <Button onClick={handleSaveChanges} disabled={isLoading || isSaving || problematicDays.length === 0 || !hasSelection}>{isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}</Button>
