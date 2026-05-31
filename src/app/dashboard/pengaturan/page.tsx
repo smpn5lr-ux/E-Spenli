@@ -62,7 +62,8 @@ export default function PengaturanPage() {
   const [isNotificationActive, setIsNotificationActive] = useState(false);
   const [notificationDuration, setNotificationDuration] = useState(10);
 
-  // App Icon settings
+  // App Settings
+  const [appName, setAppName] = useState('');
   const [appIconPreview, setAppIconPreview] = useState<string | null>(null);
   const appIconInputRef = useRef<HTMLInputElement>(null);
 
@@ -97,6 +98,7 @@ export default function PengaturanPage() {
       setHeadmasterNip(schoolConfigData.headmasterNip ?? '');
       setReportCity(schoolConfigData.reportCity ?? '');
       setGeminiApiKey(schoolConfigData.geminiApiKey ?? '');
+      setAppName(schoolConfigData.appName ?? 'E-Spenli');
       setAppIconPreview(schoolConfigData.customAppIcon ?? null);
       setLoginLogoPreview(schoolConfigData.loginLogoUrl ?? null);
       setLoginTitle(schoolConfigData.loginTitle ?? '');
@@ -271,14 +273,9 @@ export default function PengaturanPage() {
             break;
         case 'appIcon':
             setIsAppIconSaving(true);
-            if (!appIconPreview) {
-                toast({ variant: 'destructive', title: 'Gagal', description: 'Tidak ada logo untuk disimpan.' });
-                setIsAppIconSaving(false);
-                return;
-            }
-            dataToSave = { customAppIcon: appIconPreview };
-            toastTitle = 'Logo Aplikasi Disimpan';
-            toastDescription = 'Logo aplikasi telah berhasil diperbarui.';
+            dataToSave = { appName, customAppIcon: appIconPreview };
+            toastTitle = 'Pengaturan Aplikasi Disimpan';
+            toastDescription = 'Nama dan logo aplikasi telah berhasil diperbarui.';
             break;
         case 'loginPage':
             setIsLoginSettingsSaving(true);
@@ -462,12 +459,16 @@ export default function PengaturanPage() {
 
             <section>
               <div className="mb-6">
-                <h2 className="text-2xl font-bold tracking-tight">Pengaturan Logo Aplikasi</h2>
-                <p className="text-muted-foreground">Logo ini akan ditampilkan sebagai ikon aplikasi saat diinstal (PWA).</p>
+                <h2 className="text-2xl font-bold tracking-tight">Pengaturan Aplikasi</h2>
+                <p className="text-muted-foreground">Atur nama dan logo aplikasi yang akan digunakan di seluruh antarmuka, termasuk pada PWA.</p>
               </div>
               <Card>
                 <CardContent className="grid gap-6 pt-6">
-                    <div className="flex items-center gap-4 sm:gap-6">
+                    <div className="space-y-2">
+                        <Label htmlFor="app-name">Nama Aplikasi</Label>
+                        <Input id="app-name" value={appName} onChange={e => setAppName(e.target.value)} placeholder="E-Spenli" />
+                    </div>
+                    <div className="flex items-center gap-4 sm:gap-6 pt-4">
                         <div className="relative shrink-0">
                           <Avatar className="h-20 w-20 sm:h-24 sm:w-24 border rounded-lg">
                             <AvatarImage src={appIconPreview ?? '/logofix.png'} alt="App Icon Preview" />
@@ -488,7 +489,7 @@ export default function PengaturanPage() {
                 <CardFooter className="border-t px-6 py-4">
                   <Button onClick={() => handleSettingsSave('appIcon')} disabled={isAppIconSaving}>
                     {isAppIconSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Simpan Logo Aplikasi
+                    Simpan Pengaturan Aplikasi
                   </Button>
                 </CardFooter>
               </Card>
