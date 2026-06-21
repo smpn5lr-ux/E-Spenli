@@ -12,12 +12,12 @@ import { SettingsProvider } from '@/contexts/SettingsContext';
 
 // Function to fetch school config from Firestore
 async function getSchoolConfig() {
-  // Make sure adminDb is initialized before using it
-  if (!adminDb) {
-    console.error("Firebase Admin not initialized, cannot fetch school config.");
-    return null;
-  }
   try {
+    // Make sure adminDb is initialized before using it
+    if (!adminDb) {
+      console.error("Firebase Admin not initialized, cannot fetch school config.");
+      return null;
+    }
     const settingsDoc = await adminDb.collection('settings').doc('school').get();
     if (settingsDoc.exists) {
       return settingsDoc.data();
@@ -25,6 +25,7 @@ async function getSchoolConfig() {
     return null;
   } catch (error) {
     console.error("Error fetching school config for metadata:", error);
+    // In case of an error, return null to avoid blocking the page
     return null;
   }
 }

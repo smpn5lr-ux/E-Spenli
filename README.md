@@ -2,6 +2,15 @@
 
 Selamat datang di dokumentasi resmi E-SPENLI, sebuah aplikasi absensi digital modern yang dirancang khusus untuk **Admin, Kepala Sekolah, Guru, dan Pegawai** di SMPN 5 Langke Rembong. Aplikasi ini dibangun untuk mengotomatiskan, memantau, dan meningkatkan akurasi proses absensi serta pelaporan di lingkungan sekolah.
 
+## Arsitektur & Biaya
+
+Aplikasi ini dirancang untuk berjalan **sepenuhnya gratis** dengan memanfaatkan paket *Hobby/Spark* dari layanan berikut:
+
+- **Hosting Frontend**: Vercel (Hobby Plan)
+- **Database & Autentikasi**: Firebase (Spark Plan)
+
+Kombinasi ini memberikan performa tinggi tanpa menimbulkan biaya bulanan, sangat ideal untuk skala sekolah.
+
 ## Latar Belakang
 
 Di era digital, proses manual pencatatan kehadiran rentan terhadap kesalahan, memakan waktu, dan sulit untuk dianalisis. E-SPENLI hadir sebagai solusi untuk mengatasi tantangan ini dengan menyediakan platform yang efisien, transparan, dan mudah diakses.
@@ -122,3 +131,5 @@ PWA diaktifkan pada build produksi (`@ducanh2912/next-pwa`). Manifest: `src/app/
 
 - [Panduan deploy & secret](docs/DEPLOY.md)
 - [Checklist verifikasi per peran](docs/ROLE_AUDIT.md)
+
+<!-- trigger redeploy -->

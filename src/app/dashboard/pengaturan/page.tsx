@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useUser, useDoc, useFirestore, useMemoFirebase, setDocumentNonBlocking } from '@/firebase';
+import { useUser, useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { Loader2, Camera, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
@@ -19,11 +19,13 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { PageWrapper } from '@/components/layout/page-wrapper';
+import { useSettings } from '@/contexts/SettingsContext';
 
 export default function PengaturanPage() {
   const { user, isUserLoading: isAuthLoading } = useUser();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { refreshSettings } = useSettings();
   
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -62,12 +64,7 @@ export default function PengaturanPage() {
   const [isNotificationActive, setIsNotificationActive] = useState(false);
   const [notificationDuration, setNotificationDuration] = useState(10);
 
-<<<<<<< HEAD
-  // App Settings
-  const [appName, setAppName] = useState('');
-=======
   // PWA/App settings
->>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
   const [appIconPreview, setAppIconPreview] = useState<string | null>(null);
   const appIconInputRef = useRef<HTMLInputElement>(null);
   const [appName, setAppName] = useState('');
@@ -96,29 +93,6 @@ export default function PengaturanPage() {
   }, [userData]);
 
   useEffect(() => {
-<<<<<<< HEAD
-    if (schoolConfigData) {
-      setGovernmentAgency(schoolConfigData.governmentAgency ?? '');
-      setEducationAgency(schoolConfigData.educationAgency ?? '');
-      setSchoolName(schoolConfigData.schoolName ?? '');
-      setAddress(schoolConfigData.address ?? '');
-      setHeadmasterName(schoolConfigData.headmasterName ?? '');
-      setHeadmasterNip(schoolConfigData.headmasterNip ?? '');
-      setReportCity(schoolConfigData.reportCity ?? '');
-      setGeminiApiKey(schoolConfigData.geminiApiKey ?? '');
-      setAppName(schoolConfigData.appName ?? 'E-Spenli');
-      setAppIconPreview(schoolConfigData.customAppIcon ?? null);
-      setLoginLogoPreview(schoolConfigData.loginLogoUrl ?? null);
-      setLoginTitle(schoolConfigData.loginTitle ?? '');
-      setLoginSubtitle(schoolConfigData.loginSubtitle ?? '');
-      setLoginCopyright(schoolConfigData.loginCopyright ?? '');
-      setLoginCopyrightSubtitle(schoolConfigData.loginCopyrightSubtitle ?? '');
-      if (schoolConfigData.adminNotification) {
-        setNotificationTitle(schoolConfigData.adminNotification.title ?? '');
-        setNotificationMessage(schoolConfigData.adminNotification.message ?? '');
-        setIsNotificationActive(schoolConfigData.adminNotification.isActive ?? false);
-        setNotificationDuration(schoolConfigData.adminNotification.duration ?? 10);
-=======
     if (settingsData) {
       // Report Header settings
       const reportHeader = settingsData.reportHeader || {};
@@ -154,7 +128,6 @@ export default function PengaturanPage() {
         setNotificationMessage(settingsData.adminNotification.message ?? '');
         setIsNotificationActive(settingsData.adminNotification.isActive ?? false);
         setNotificationDuration(settingsData.adminNotification.duration ?? 10);
->>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
       }
     }
   }, [settingsData]);
@@ -286,7 +259,7 @@ export default function PengaturanPage() {
     }
   };
 
-  const handleSettingsSave = (type: 'report' | 'apiKey' | 'notification' | 'pwa' | 'loginPage') => {
+  const handleSettingsSave = async (type: 'report' | 'apiKey' | 'notification' | 'pwa' | 'loginPage') => {
     if (!settingsRef) return;
     let dataToSave = {};
     let toastTitle = '';
@@ -316,13 +289,6 @@ export default function PengaturanPage() {
             toastTitle = 'Pemberitahuan Disimpan';
             toastDescription = 'Pengaturan pemberitahuan telah diperbarui.';
             break;
-<<<<<<< HEAD
-        case 'appIcon':
-            setIsAppIconSaving(true);
-            dataToSave = { appName, customAppIcon: appIconPreview };
-            toastTitle = 'Pengaturan Aplikasi Disimpan';
-            toastDescription = 'Nama dan logo aplikasi telah berhasil diperbarui.';
-=======
         case 'pwa':
             setIsPwaSaving(true);
             dataToSave = { 
@@ -335,7 +301,6 @@ export default function PengaturanPage() {
             };
             toastTitle = 'Pengaturan PWA Disimpan';
             toastDescription = 'Pengaturan PWA (logo, nama, dll) telah diperbarui.';
->>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
             break;
         case 'loginPage':
             setIsLoginSettingsSaving(true);
@@ -353,14 +318,20 @@ export default function PengaturanPage() {
             break;
     }
 
-    setDocumentNonBlocking(settingsRef, dataToSave, { merge: true });
-    toast({ title: toastTitle, description: toastDescription });
-
-    if (type === 'report') setIsReportSaving(false);
-    if (type === 'apiKey') setIsApiKeySaving(false);
-    if (type === 'notification') setIsNotificationSaving(false);
-    if (type === 'pwa') setIsPwaSaving(false);
-    if (type === 'loginPage') setIsLoginSettingsSaving(false);
+    try {
+        await updateDoc(settingsRef, dataToSave);
+        toast({ title: toastTitle, description: toastDescription });
+        refreshSettings();
+    } catch (error) {
+        console.error("Error saving settings:", error);
+        toast({ variant: 'destructive', title: 'Gagal Menyimpan', description: 'Terjadi kesalahan saat menyimpan pengaturan.' });
+    } finally {
+        if (type === 'report') setIsReportSaving(false);
+        if (type === 'apiKey') setIsApiKeySaving(false);
+        if (type === 'notification') setIsNotificationSaving(false);
+        if (type === 'pwa') setIsPwaSaving(false);
+        if (type === 'loginPage') setIsLoginSettingsSaving(false);
+    }
   };
 
   const getInitials = (name: string | undefined | null) => name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
@@ -521,13 +492,8 @@ export default function PengaturanPage() {
 
             <section>
               <div className="mb-6">
-<<<<<<< HEAD
-                <h2 className="text-2xl font-bold tracking-tight">Pengaturan Aplikasi</h2>
-                <p className="text-muted-foreground">Atur nama dan logo aplikasi yang akan digunakan di seluruh antarmuka, termasuk pada PWA.</p>
-=======
                 <h2 className="text-2xl font-bold tracking-tight">Pengaturan Aplikasi (PWA)</h2>
                 <p className="text-muted-foreground">Sesuaikan ikon, nama, dan deskripsi aplikasi yang muncul saat diinstal di perangkat.</p>
->>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
               </div>
               <Card>
                 <CardContent className="grid gap-6 pt-6">
@@ -566,15 +532,9 @@ export default function PengaturanPage() {
                     </div>
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">
-<<<<<<< HEAD
-                  <Button onClick={() => handleSettingsSave('appIcon')} disabled={isAppIconSaving}>
-                    {isAppIconSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Simpan Pengaturan Aplikasi
-=======
                   <Button onClick={() => handleSettingsSave('pwa')} disabled={isPwaSaving}>
                     {isPwaSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Simpan Pengaturan PWA
->>>>>>> 19a428fe56ad3b4704a7361140e513057b0ecc85
                   </Button>
                 </CardFooter>
               </Card>

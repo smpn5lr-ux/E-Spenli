@@ -172,7 +172,7 @@ function MonthlyConfigCalendar({ user, schoolConfig }: { user: any, schoolConfig
 
   const calculatedWorkDays = useMemo(() => {
     if (!schoolConfig) return 0;
-    const recurringOffDays: number[] = schoolConfig.offDays ?? [0, 6];
+    const recurringOffDays: number[] = schoolConfig.offDays ?? [0]; // Correct default
     const specificHolidays = new Set(holidays.map(d => format(d, 'yyyy-MM-dd')));
     const workDays = allDaysInMonth.filter(day => {
       const isRecurringOff = recurringOffDays.includes(day.getDay());
@@ -224,7 +224,7 @@ function MonthlyConfigCalendar({ user, schoolConfig }: { user: any, schoolConfig
                                     {allDaysInMonth.map((day) => {
                                         const dayString = format(day, 'yyyy-MM-dd');
                                         const isChecked = holidays.some(d => format(d, 'yyyy-MM-dd') === dayString);
-                                        const isRecurringOff = (schoolConfig?.offDays ?? [0, 6]).includes(day.getDay());
+                                        const isRecurringOff = (schoolConfig?.offDays ?? [0]).includes(day.getDay()); // Correct default
                                         return (
                                             <TableRow key={dayString} className={`has-[:checked]:bg-primary/10 ${isRecurringOff ? 'bg-muted/50 text-muted-foreground' : ''}`}>
                                                 <TableCell className="w-12 text-center py-2">
@@ -310,46 +310,65 @@ export default function KonfigurasiAbsenPage() {
   }, [isLoading, isAdmin, router]);
 
   useEffect(() => {
-    if (schoolConfigData) {
-      setHolidayMode(schoolConfigData.isAttendanceActive === false);
-      setOffDays(schoolConfigData.offDays ?? [0, 6]);
-      setUseLocationValidation(schoolConfigData.useLocationValidation ?? true);
-      setUseTimeValidation(schoolConfigData.useTimeValidation ?? true);
-      setLatitude(schoolConfigData.latitude?.toString() ?? '-8.58333');
-      setLongitude(schoolConfigData.longitude?.toString() ?? '120.46667');
-      setRadius(schoolConfigData.radius ?? 100);
-      setCheckInStart(schoolConfigData.checkInStartTime ?? '06:00');
-      setCheckInEnd(schoolConfigData.checkInEndTime ?? '08:00');
+    if (schoolConfigData && schoolConfigRef && !isConfigLoading) {
+        setHolidayMode(schoolConfigData.isAttendanceActive === false);
 
-      if (schoolConfigData.checkOutTimes) {
-          // Ensure all days are present, falling back to default for any missing days
-          setCheckOutTimes(prev => ({
-              ...defaultCheckOutTimes,
-              ...schoolConfigData.checkOutTimes
-          }));
-      } else if (schoolConfigData.checkOutStartTime && schoolConfigData.checkOutEndTime) {
-          // Backward compatibility: If old fields exist, create the new structure from them
-          const oldStart = schoolConfigData.checkOutStartTime;
-          const oldEnd = schoolConfigData.checkOutEndTime;
-          setCheckOutTimes({
-              1: { start: oldStart, end: oldEnd },
-              2: { start: oldStart, end: oldEnd },
-              3: { start: oldStart, end: oldEnd },
-              4: { start: oldStart, end: oldEnd },
-              5: { start: oldStart, end: oldEnd },
-              6: { start: oldStart, end: oldEnd },
-          });
-      }
+        const dbOffDays = schoolConfigData.offDays;
+        let needsCorrection = false;
 
-      if (schoolConfigData.qrCodeValue) {
-        setQrCodeValue(schoolConfigData.qrCodeValue);
-      } else if (schoolConfigRef && !isConfigLoading) {
-        const newQrValue = Math.random().toString(36).substring(2, 15);
-        setQrCodeValue(newQrValue);
-        updateDocumentNonBlocking(schoolConfigRef, { qrCodeValue: newQrValue });
-      }
+        // Definitive check for corrupted or old configuration data for offDays
+        if (!Array.isArray(dbOffDays) || dbOffDays.includes(6)) {
+            needsCorrection = true;
+        }
+
+        if (needsCorrection) {
+            // If the data is bad, force-set a correct default and update the database.
+            const correctedOffDays = [0]; // Sunday only
+            setOffDays(correctedOffDays);
+            updateDocumentNonBlocking(schoolConfigRef, { offDays: correctedOffDays });
+            toast({
+                title: "Konfigurasi Diperbaiki",
+                description: "Pengaturan hari libur telah direset. Hari Sabtu kini aktif.",
+            });
+        } else {
+            // If data is valid, use it.
+            setOffDays(dbOffDays);
+        }
+
+        // Set all other states from the school config data
+        setUseLocationValidation(schoolConfigData.useLocationValidation ?? true);
+        setUseTimeValidation(schoolConfigData.useTimeValidation ?? true);
+        setLatitude(schoolConfigData.latitude?.toString() ?? '-8.58333');
+        setLongitude(schoolConfigData.longitude?.toString() ?? '120.46667');
+        setRadius(schoolConfigData.radius ?? 100);
+        setCheckInStart(schoolConfigData.checkInStartTime ?? '06:00');
+        setCheckInEnd(schoolConfigData.checkInEndTime ?? '08:00');
+
+        if (schoolConfigData.checkOutTimes) {
+            setCheckOutTimes(prev => ({ ...defaultCheckOutTimes, ...schoolConfigData.checkOutTimes }));
+        } else if (schoolConfigData.checkOutStartTime && schoolConfigData.checkOutEndTime) {
+            const oldStart = schoolConfigData.checkOutStartTime;
+            const oldEnd = schoolConfigData.checkOutEndTime;
+            setCheckOutTimes({
+                1: { start: oldStart, end: oldEnd },
+                2: { start: oldStart, end: oldEnd },
+                3: { start: oldStart, end: oldEnd },
+                4: { start: oldStart, end: oldEnd },
+                5: { start: oldStart, end: oldEnd },
+                6: { start: oldStart, end: oldEnd },
+            });
+        }
+
+        if (schoolConfigData.qrCodeValue) {
+            setQrCodeValue(schoolConfigData.qrCodeValue);
+        } else if (schoolConfigRef && !isConfigLoading) {
+            const newQrValue = Math.random().toString(36).substring(2, 15);
+            setQrCodeValue(newQrValue);
+            updateDocumentNonBlocking(schoolConfigRef, { qrCodeValue: newQrValue });
+        }
     }
-  }, [schoolConfigData, isConfigLoading, schoolConfigRef]);
+}, [schoolConfigData, isConfigLoading, schoolConfigRef, toast]);
+
 
   useEffect(() => {
     if (qrCodeValue) {
@@ -519,18 +538,23 @@ export default function KonfigurasiAbsenPage() {
                   </CardHeader>
                   <CardContent className="space-y-6 p-4 sm:p-6">
                     <div className="rounded-lg border p-4 space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div><Label htmlFor="holiday-mode" className="font-semibold">Mode Libur Manual</Label><p className="text-sm text-muted-foreground">Jika diaktifkan, sistem absensi akan non-aktif untuk semua.</p></div>
-                            <Switch id="holiday-mode" checked={holidayMode} onCheckedChange={setHolidayMode} />
+                        <div className="flex items-start sm:items-center justify-between">
+                            <div>
+                                <Label htmlFor="attendance-active" className="font-semibold">Sistem Absensi Aktif</Label>
+                                <p className="text-sm text-muted-foreground">Jika non-aktif, sistem absensi tidak bisa digunakan.</p>
+                            </div>
+                            <Switch id="attendance-active" checked={!holidayMode} onCheckedChange={(checked) => setHolidayMode(!checked)} className="mt-1 sm:mt-0" />
                         </div>
-                        <div className="space-y-4 pt-4 border-t">
-                            <Label className='font-medium'>Hari Libur Rutin</Label>
-                            <p className="text-sm text-muted-foreground">Pilih hari dalam seminggu yang dianggap sebagai hari libur.</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        <div className="space-y-3 pt-4 border-t">
+                             <div>
+                               <Label className='font-medium'>Hari Libur Rutin</Label>
+                               <p className="text-sm text-muted-foreground">Pilih hari libur yang berulang setiap minggu.</p>
+                             </div>
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
                               {daysOfWeek.map(day => (
                                   <div key={day.value} className="flex items-center space-x-2">
                                     <Checkbox id={`day-${day.value}`} checked={offDays.includes(day.value)} onCheckedChange={(checked) => handleDayToggle(day.value, checked)} disabled={holidayMode} />
-                                    <Label htmlFor={`day-${day.value}`} className="font-normal">{day.label}</Label>
+                                    <Label htmlFor={`day-${day.value}`} className="font-normal cursor-pointer">{day.label}</Label>
                                   </div>
                               ))}
                             </div>
@@ -575,7 +599,7 @@ export default function KonfigurasiAbsenPage() {
                                         <p className="text-sm text-muted-foreground">Atur rentang waktu absensi pulang untuk setiap hari kerja.</p>
                                     </div>
                                     <div className="space-y-3 rounded-md border p-3">
-                                        {daysOfWeek.filter(d => d.value !== 0).map(day => (
+                                        {daysOfWeek.filter(d => !offDays.includes(d.value)).map(day => (
                                             <div key={day.value} className="grid grid-cols-1 sm:grid-cols-5 items-center gap-2">
                                                 <Label htmlFor={`checkout-start-${day.value}`} className="sm:col-span-2 text-sm font-normal">{day.label}</Label>
                                                 <div className="sm:col-span-3 grid grid-cols-2 gap-2">
