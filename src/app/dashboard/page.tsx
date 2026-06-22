@@ -351,11 +351,12 @@ function useMonthlyAttendanceSummary(user: any) {
     return { summary: summary || defaultSummary, isLoading: isLoading || isSettingsLoading };
 }
 
-// --- useStaffDashboardStats (No changes needed here) ---
+// --- useStaffDashboardStats (MODIFIED) ---
 function useStaffDashboardStats(firestore: any, user: any) {
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const cacheKey = `staffDashboardStats_v7_${todayStr}`;
-  const [stats, setStats] = useState<any>(() => getFromCache(cacheKey) || null);
+  // Initialize with an empty object instead of null
+  const [stats, setStats] = useState<any>(() => getFromCache(cacheKey) || {});
   const defaultStats = useMemo(() => ({ totalStaff: 0, hadir: 0, izin: 0, sakit: 0, alpa: 0, pendingLeave: 0, pendingLate: 0, totalLate: 0 }), []);
   
   const { status: attendanceWindowStatus, isLoading: isWindowLoading } = useAttendanceWindow();
@@ -399,7 +400,7 @@ function useStaffDashboardStats(firestore: any, user: any) {
   return { stats: stats || defaultStats, isLoading: !isSettled || (finalStatus !== 'HOLIDAY' && !stats) };
 }
 
-// --- Dashboard Components (No changes needed) ---
+// --- Dashboard Components (MODIFIED) ---
 const HeadmasterDashboard = ({ user, router }: any) => {
     const firestore = useFirestore();
     const { stats, isLoading: isStatsLoading } = useStaffDashboardStats(firestore, user);
@@ -416,10 +417,10 @@ const HeadmasterDashboard = ({ user, router }: any) => {
             <PersonalAttendanceCardUI attendanceData={todaysAttendance} isLoading={isAttendanceLoading || isLateSubmissionLoading || isLeaveLoading} lateSubmissionData={lateSubmissionData} approvedLeaveData={approvedLeaveData} />
             <MonthlyAttendanceChartUI summaryData={personalSummary} isLoading={isPersonalSummaryLoading} />
             <StatCard title="Hadir Hari Ini" value={stats.hadir} icon={UserCheck} isLoading={isStatsLoading} className="bg-[hsl(var(--card-green-bg))] text-[hsl(var(--card-green-fg))]" />
-            <StatCard title="Izin/Sakit Hari Ini" value={stats.izin + stats.sakit} icon={BookUser} description={`${stats.izin} Izin, ${stats.sakit} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
-            <StatCard title="Menunggu Izin" value={stats.pendingLeave} icon={MailWarning} description="Pengajuan izin/sakit" isLoading={isStatsLoading} className="cursor-pointer transition-colors bg-[hsl(var(--card-blue-bg))] text-[hsl(var(--card-blue-fg))] hover:bg-opacity-90" onClick={() => router.push('/dashboard/izin-kepala-sekolah')} />
-            <StatCard title="Persetujuan Terlambat" value={`${stats.pendingLate} / ${stats.totalLate}`} icon={Clock4} description="Pengajuan menunggu" isLoading={isStatsLoading} className="cursor-pointer transition-colors bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))] hover:bg-opacity-90" onClick={() => router.push('/dashboard/terlambat/persetujuan')} />
-            <StatCard title="Alpa Hari Ini" value={stats.alpa} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
+            <StatCard title="Izin/Sakit Hari Ini" value={(stats.izin || 0) + (stats.sakit || 0)} icon={BookUser} description={`${stats.izin || 0} Izin, ${stats.sakit || 0} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
+            <StatCard title="Menunggu Izin" value={stats.pendingLeave || 0} icon={MailWarning} description="Pengajuan izin/sakit" isLoading={isStatsLoading} className="cursor-pointer transition-colors bg-[hsl(var(--card-blue-bg))] text-[hsl(var(--card-blue-fg))] hover:bg-opacity-90" onClick={() => router.push('/dashboard/izin-kepala-sekolah')} />
+            <StatCard title="Persetujuan Terlambat" value={`${stats.pendingLate || 0} / ${stats.totalLate || 0}`} icon={Clock4} description="Pengajuan menunggu" isLoading={isStatsLoading} className="cursor-pointer transition-colors bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))] hover:bg-opacity-90" onClick={() => router.push('/dashboard/terlambat/persetujuan')} />
+            <StatCard title="Alpa Hari Ini" value={stats.alpa || 0} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
             <div className="col-span-1 md:col-span-2 lg:col-span-4 xl:col-span-4"><TodaysActivityTable /></div>
             <div className="col-span-1 md:col-span-2 lg:col-span-4 xl:col-span-4"><AbsentUsersTable /></div>
         </> 
@@ -431,11 +432,11 @@ const AdminDashboard = ({ user, router }: any) => {
     const { stats, isLoading: isStatsLoading } = useStaffDashboardStats(firestore, user);
     return (
         <>
-            <StatCard title="Hadir Hari Ini" value={stats.hadir} icon={UserCheck} isLoading={isStatsLoading} className="bg-[hsl(var(--card-green-bg))] text-[hsl(var(--card-green-fg))]" />
-            <StatCard title="Izin/Sakit Hari Ini" value={stats.izin + stats.sakit} icon={BookUser} description={`${stats.izin} Izin, ${stats.sakit} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
-            <StatCard title="Menunggu Persetujuan" value={stats.pendingLeave} icon={MailWarning} isLoading={isStatsLoading} className="bg-[hsl(var(--card-blue-bg))] text-[hsl(var(--card-blue-fg))]" />
-            <StatCard title="Persetujuan Terlambat" value={`${stats.pendingLate} / ${stats.totalLate}`} description="Pengajuan menunggu" icon={Clock4} isLoading={isStatsLoading} className="bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))]" />
-            <StatCard title="Alpa Hari Ini" value={stats.alpa} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
+            <StatCard title="Hadir Hari Ini" value={stats.hadir || 0} icon={UserCheck} isLoading={isStatsLoading} className="bg-[hsl(var(--card-green-bg))] text-[hsl(var(--card-green-fg))]" />
+            <StatCard title="Izin/Sakit Hari Ini" value={(stats.izin || 0) + (stats.sakit || 0)} icon={BookUser} description={`${stats.izin || 0} Izin, ${stats.sakit || 0} Sakit`} isLoading={isStatsLoading} className="bg-[hsl(var(--card-orange-bg))] text-[hsl(var(--card-orange-fg))]" />
+            <StatCard title="Menunggu Persetujuan" value={stats.pendingLeave || 0} icon={MailWarning} isLoading={isStatsLoading} className="bg-[hsl(var(--card-blue-bg))] text-[hsl(var(--card-blue-fg))]" />
+            <StatCard title="Persetujuan Terlambat" value={`${stats.pendingLate || 0} / ${stats.totalLate || 0}`} description="Pengajuan menunggu" icon={Clock4} isLoading={isStatsLoading} className="bg-[hsl(var(--card-purple-bg))] text-[hsl(var(--card-purple-fg))]" />
+            <StatCard title="Alpa Hari Ini" value={stats.alpa || 0} icon={UserX} isLoading={isStatsLoading} className="bg-[hsl(var(--card-red-bg))] text-[hsl(var(--card-red-fg))]" />
             <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4"><TodaysActivityTable /></div>
             <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4"><AbsentUsersTable /></div>
         </> 

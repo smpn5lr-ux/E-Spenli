@@ -104,7 +104,7 @@ export async function fetchUserMonthlyReportData(
         if (leaveRecord?.status === 'approved') {
             const leaveType = leaveRecord.type.toLowerCase();
             let keteranganLabel = labels[LABEL_KEYS.PERMISSION];
-            if (leaveType === 'sick') keteranganLabel = labels[LABEL_KEYS.SICK];
+            if (leaveType === 'sakit') keteranganLabel = labels[LABEL_KEYS.SICK];
             else if (leaveType.includes('dinas')) keteranganLabel = labels[LABEL_KEYS.OFFICIAL_DUTY];
             recordForDay = { 
                 id: leaveRecord.id, 
@@ -177,7 +177,7 @@ export async function getDailyStaffAttendanceStats(firestore: Firestore) {
         if (userId) {
             if (leave.status === 'approved') {
                 onLeaveUserIds.add(userId);
-                if (leave.type === 'sick') {
+                if (leave.type.toLowerCase() === 'sakit') {
                     sakitCount++;
                 } else {
                     izinCount++; // Count all non-sick approved leaves as 'izin'
@@ -238,7 +238,7 @@ export async function calculateAttendanceStats(
                   points = weights.dinas_pagi;
                 } else if (leaveType.includes('dinas siang')) {
                   points = weights.dinas_siang;
-                } else if (leaveType === 'sick') {
+                } else if (leaveType === 'sakit') {
                     points = weights.sick;
                 } else { 
                     points = weights.permission;
@@ -256,7 +256,7 @@ export async function calculateAttendanceStats(
             totalHadir++;
         } else if (report.status === 'Izin') {
             const leaveType = report.leaveType || '';
-            if (leaveType === 'sick') {
+            if (leaveType === 'sakit') {
                 totalSakit++;
             } else { 
                 totalIzin++;

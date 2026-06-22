@@ -88,11 +88,11 @@ export default function ReportClientShell({ userId, initialUserData, initialMont
     }, [firestore, currentMonth, refetchAllData]);
 
     const { reportDetails, summary } = useMemo(() => {
-        if (!attendanceHistory || !leaveHistory || !schoolConfig || !monthlyConfig) return { reportDetails: [], summary: {} };
+        if (!attendanceHistory || !leaveHistory || !schoolConfig) return { reportDetails: [], summary: {} };
 
         const today = startOfDay(new Date());
         const recurringOffDays: number[] = Array.isArray(schoolConfig.offDays) ? schoolConfig.offDays : [0, 6];
-        const specificHolidays = new Set(monthlyConfig.holidays ?? []);
+        const specificHolidays = new Set(monthlyConfig?.holidays ?? []);
         
         const attendanceMap = new Map(attendanceHistory.map(rec => [rec.id, rec]));
         const leaveMap = new Map<string, any>();
